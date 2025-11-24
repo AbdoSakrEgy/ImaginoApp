@@ -11,8 +11,9 @@ const auth = async (req, res, next) => {
     }
     const { user, payload } = await (0, decodeToken_js_1.decodeToken)({
         authorization,
-        tokenType: decodeToken_js_1.tokenTypes.access,
+        tokenType: decodeToken_js_1.TokenTypesEnum.access,
     });
+    console.log({ user });
     // step: modify res.locals
     res.locals.user = user;
     res.locals.payload = payload;

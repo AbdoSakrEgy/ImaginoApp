@@ -10,12 +10,12 @@ exports.registerSchema = zod_1.default
     .object({
     firstName: zod_1.default.string().min(3).max(50),
     lastName: zod_1.default.string().min(3).max(50),
-    age: zod_1.default.number().min(18).max(200).optional(),
-    gender: zod_1.default.literal([user_module_types_1.Gender.male, user_module_types_1.Gender.female]).optional(),
-    phone: zod_1.default.string().optional(),
-    role: zod_1.default.literal([user_module_types_1.Role.admin, user_module_types_1.Role.customer, user_module_types_1.Role.seller]).optional(),
     email: zod_1.default.email(),
     password: zod_1.default.string(),
+    age: zod_1.default.number().min(18).max(200).optional(),
+    gender: zod_1.default.literal([user_module_types_1.Gender.MALE, user_module_types_1.Gender.FEMALE]).optional(),
+    phone: zod_1.default.string().optional(),
+    role: zod_1.default.literal([user_module_types_1.Role.USER, user_module_types_1.Role.ADMIN]).optional(),
 })
     .superRefine((args, ctx) => {
     if (args.phone) {

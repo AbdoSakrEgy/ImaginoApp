@@ -1,5 +1,5 @@
 import { NextFunction, Request, Response } from "express";
-import { decodeToken, tokenTypes } from "../utils/decodeToken.js";
+import { decodeToken, TokenTypesEnum } from "../utils/decodeToken.js";
 import { ApplicationExpection } from "../utils/Errors.js";
 
 export const auth = async (
@@ -14,8 +14,9 @@ export const auth = async (
   }
   const { user, payload } = await decodeToken({
     authorization,
-    tokenType: tokenTypes.access,
+    tokenType: TokenTypesEnum.access,
   });
+  console.log({user});
   // step: modify res.locals
   res.locals.user = user;
   res.locals.payload = payload;

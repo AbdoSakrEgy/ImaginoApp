@@ -1,4 +1,4 @@
-import { createTransport, Transport } from "nodemailer";
+import { createTransport } from "nodemailer";
 
 export const sendEmail = async ({
   to,

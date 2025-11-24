@@ -5,12 +5,12 @@ export const registerSchema = z
   .object({
     firstName: z.string().min(3).max(50),
     lastName: z.string().min(3).max(50),
-    age: z.number().min(18).max(200).optional(),
-    gender: z.literal([Gender.male, Gender.female]).optional(),
-    phone: z.string().optional(),
-    role: z.literal([Role.admin, Role.customer, Role.seller]).optional(),
     email: z.email(),
     password: z.string(),
+    age: z.number().min(18).max(200).optional(),
+    gender: z.literal([Gender.MALE, Gender.FEMALE]).optional(),
+    phone: z.string().optional(),
+    role: z.literal([Role.USER, Role.ADMIN]).optional(),
   })
   .superRefine((args, ctx) => {
     if (args.phone) {

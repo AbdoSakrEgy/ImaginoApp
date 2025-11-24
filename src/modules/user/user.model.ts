@@ -62,80 +62,68 @@ userSchema.virtual("fullName").set(function (value) {
 });
 
 // hooks
+
 // pre save
-userSchema.pre("save", async function (next: any) {
-  if (this.emailOtp && this.isModified("emailOtp")) {
-    this.emailOtp = {
-      otp: await hash(this.emailOtp?.otp),
-      expiredAt: this.emailOtp?.expiredAt,
-    };
+userSchema.pre(
+  "save",
+  async function (
+    this: HydratedDocument<IUser> & { isFirstCreation: boolean },
+    next
+  ) {
+    this.isFirstCreation = this.isNew;
+    if (this.emailOtp && this.isModified("emailOtp")) {
+      this.emailOtp = {
+        otp: await hash(this.emailOtp?.otp),
+        expiredAt: this.emailOtp?.expiredAt,
+      };
+    }
+    if (this.newEmailOtp && this.isModified("newEmailOtp")) {
+      this.newEmailOtp = {
+        otp: await hash(this.newEmailOtp?.otp),
+        expiredAt: this.newEmailOtp?.expiredAt,
+      };
+    }
+    if (this.password && this.isModified("password")) {
+      this.password = await hash(this.password);
+    }
+    if (this.passwordOtp && this.isModified("passwordOtp")) {
+      this.passwordOtp = {
+        otp: await hash(this.passwordOtp?.otp),
+        expiredAt: this.passwordOtp?.expiredAt,
+      };
+    }
+    if (this.otp2FA && this.isModified("otp2FA")) {
+      this.otp2FA = {
+        otp: await hash(this.otp2FA?.otp),
+        expiredAt: this.otp2FA?.expiredAt,
+      };
+    }
   }
-  if (this.newEmailOtp && this.isModified("newEmailOtp")) {
-    this.newEmailOtp = {
-      otp: await hash(this.newEmailOtp?.otp),
-      expiredAt: this.newEmailOtp?.expiredAt,
-    };
-  }
-  if (this.password && this.isModified("password")) {
-    this.password = await hash(this.password);
-  }
-  if (this.passwordOtp && this.isModified("passwordOtp")) {
-    this.passwordOtp = {
-      otp: await hash(this.passwordOtp?.otp),
-      expiredAt: this.passwordOtp?.expiredAt,
-    };
-  }
-  if (this.otp2FA && this.isModified("otp2FA")) {
-    this.otp2FA = {
-      otp: await hash(this.otp2FA?.otp),
-      expiredAt: this.otp2FA?.expiredAt,
-    };
-  }
-  next();
-});
+);
 
-userSchema.pre("updateOne", async function (next: any) {
-  await handleQueryHashing(this);
-  next();
-});
-
-userSchema.pre("updateMany", async function (next: any) {
-  await handleQueryHashing(this);
-  next();
-});
-
-userSchema.pre("findOneAndUpdate", async function (next: any) {
-  await handleQueryHashing(this);
-  next();
-});
-
-async function handleQueryHashing(query: any) {
-  const update = query.getUpdate();
+userSchema.pre("findOneAndUpdate", async function () {
+  const update: any = this.getUpdate();
   if (!update) return;
-
   const $set = update.$set || update;
-
-  if ($set["emailOtp.otp"]) {
-    $set["emailOtp.otp"] = await hash($set["emailOtp.otp"]);
+  if ($set.emailOtp?.otp) {
+    $set.emailOtp.otp = await hash($set.emailOtp.otp);
   }
-  if ($set["newEmailOtp.otp"]) {
-    $set["newEmailOtp.otp"] = await hash($set["newEmailOtp.otp"]);
+  if ($set.newEmailOtp?.otp) {
+    $set.newEmailOtp.otp = await hash($set.newEmailOtp.otp);
   }
   if ($set.password) {
     $set.password = await hash($set.password);
   }
-  if ($set["passwordOtp.otp"]) {
-    $set["passwordOtp.otp"] = await hash($set["passwordOtp.otp"]);
+  if ($set.passwordOtp?.otp) {
+    $set.passwordOtp.otp = await hash($set.passwordOtp.otp);
   }
-  if ($set["otp2FA.otp"]) {
-    $set["otp2FA.otp"] = await hash($set["otp2FA.otp"]);
+  if ($set.otp2FA?.otp) {
+    $set.otp2FA.otp = await hash($set.otp2FA.otp);
   }
-
-  // normalize
   if (!update.$set && $set !== update) {
     update.$set = $set;
   }
-}
+});
 
 // model
 export const UserModel = model<IUser>("user", userSchema);

@@ -94,6 +94,7 @@ userSchema.virtual("fullName").set(function (value) {
 // hooks
 // pre save
 userSchema.pre("save", async function (next) {
+    this.isFirstCreation = this.isNew;
     if (this.emailOtp && this.isModified("emailOtp")) {
         this.emailOtp = {
             otp: await (0, bcrypt_1.hash)(this.emailOtp?.otp),
@@ -121,44 +122,30 @@ userSchema.pre("save", async function (next) {
             expiredAt: this.otp2FA?.expiredAt,
         };
     }
-    next();
 });
-userSchema.pre("updateOne", async function (next) {
-    await handleQueryHashing(this);
-    next();
-});
-userSchema.pre("updateMany", async function (next) {
-    await handleQueryHashing(this);
-    next();
-});
-userSchema.pre("findOneAndUpdate", async function (next) {
-    await handleQueryHashing(this);
-    next();
-});
-async function handleQueryHashing(query) {
-    const update = query.getUpdate();
+userSchema.pre("findOneAndUpdate", async function () {
+    const update = this.getUpdate();
     if (!update)
         return;
     const $set = update.$set || update;
-    if ($set["emailOtp.otp"]) {
-        $set["emailOtp.otp"] = await (0, bcrypt_1.hash)($set["emailOtp.otp"]);
+    if ($set.emailOtp?.otp) {
+        $set.emailOtp.otp = await (0, bcrypt_1.hash)($set.emailOtp.otp);
     }
-    if ($set["newEmailOtp.otp"]) {
-        $set["newEmailOtp.otp"] = await (0, bcrypt_1.hash)($set["newEmailOtp.otp"]);
+    if ($set.newEmailOtp?.otp) {
+        $set.newEmailOtp.otp = await (0, bcrypt_1.hash)($set.newEmailOtp.otp);
     }
     if ($set.password) {
         $set.password = await (0, bcrypt_1.hash)($set.password);
     }
-    if ($set["passwordOtp.otp"]) {
-        $set["passwordOtp.otp"] = await (0, bcrypt_1.hash)($set["passwordOtp.otp"]);
+    if ($set.passwordOtp?.otp) {
+        $set.passwordOtp.otp = await (0, bcrypt_1.hash)($set.passwordOtp.otp);
     }
-    if ($set["otp2FA.otp"]) {
-        $set["otp2FA.otp"] = await (0, bcrypt_1.hash)($set["otp2FA.otp"]);
+    if ($set.otp2FA?.otp) {
+        $set.otp2FA.otp = await (0, bcrypt_1.hash)($set.otp2FA.otp);
     }
-    // normalize
     if (!update.$set && $set !== update) {
         update.$set = $set;
     }
-}
+});
 // model
 exports.UserModel = (0, mongoose_1.model)("user", userSchema);
