@@ -32,7 +32,7 @@ exports.updateBasicInfoSchema = zod_1.default.object({
     firstName: zod_1.default.string().min(3).max(50).optional(),
     lastName: zod_1.default.string().min(3).max(50).optional(),
     age: zod_1.default.number().min(18).max(200).optional(),
-    gender: zod_1.default.literal([user_module_types_1.Gender.male, user_module_types_1.Gender.female]).optional(),
+    gender: zod_1.default.literal([user_module_types_1.Gender.MALE, user_module_types_1.Gender.FEMALE]).optional(),
     phone: zod_1.default.string().optional(),
 });
 exports.sendFriendRequestSchema = zod_1.default.object({

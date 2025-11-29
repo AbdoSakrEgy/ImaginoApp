@@ -1,5 +1,5 @@
 import multer from "multer";
-import { ApplicationExpection } from "../Errors";
+import { ApplicationException } from "../Errors";
 import { Request } from "express";
 import fs from "fs";
 
@@ -43,9 +43,9 @@ export const multerUpload = ({
     cb: CallableFunction
   ) => {
     if (file.size > 200 * 1024 * 1024 && storeIn == StoreInEnum.memory) {
-      return cb(new ApplicationExpection("Use disk not memory", 400), false);
+      return cb(new ApplicationException("Use disk not memory", 400), false);
     } else if (!sendedFileType.includes(file.mimetype)) {
-      return cb(new ApplicationExpection("Invalid file format", 400), false);
+      return cb(new ApplicationException("Invalid file format", 400), false);
     }
     cb(null, true);
   };

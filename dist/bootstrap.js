@@ -14,6 +14,7 @@ const routes_1 = __importDefault(require("./routes"));
 const db_connection_1 = require("./DB/db.connection");
 const Errors_1 = require("./utils/Errors");
 const cors_1 = __importDefault(require("cors"));
+const express_rate_limit_1 = require("express-rate-limit");
 var whitelist = [
     "http://example1.com",
     "http://example2.com",
@@ -26,13 +27,21 @@ var corsOptions = {
             callback(null, true);
         }
         else {
-            callback(new Errors_1.ApplicationExpection("Not allowed by CORS", 401));
+            callback(new Errors_1.ApplicationException("Not allowed by CORS", 401));
         }
     },
 };
+const limiter = (0, express_rate_limit_1.rateLimit)({
+    windowMs: 15 * 60 * 1000, // 15 minutes
+    limit: 100,
+    standardHeaders: "draft-8",
+    legacyHeaders: false,
+    ipv6Subnet: 56,
+});
 const bootstrap = async () => {
     await (0, db_connection_1.connectDB)();
     app.use((0, cors_1.default)(corsOptions));
+    app.use(limiter);
     app.use(express_1.default.json());
     app.use("/api/v1", routes_1.default);
     app.use((err, req, res, next) => {

@@ -32,10 +32,10 @@ const multerUpload = ({ sendedFileDest = "general", sendedFileType = exports.fil
         });
     const fileFilter = (req, file, cb) => {
         if (file.size > 200 * 1024 * 1024 && storeIn == StoreInEnum.memory) {
-            return cb(new Errors_1.ApplicationExpection("Use disk not memory", 400), false);
+            return cb(new Errors_1.ApplicationException("Use disk not memory", 400), false);
         }
         else if (!sendedFileType.includes(file.mimetype)) {
-            return cb(new Errors_1.ApplicationExpection("Invalid file format", 400), false);
+            return cb(new Errors_1.ApplicationException("Invalid file format", 400), false);
         }
         cb(null, true);
     };

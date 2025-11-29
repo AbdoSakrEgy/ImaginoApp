@@ -7,8 +7,9 @@ dotenv.config({
 });
 import router from "./routes";
 import { connectDB } from "./DB/db.connection";
-import { ApplicationExpection, IError } from "./utils/Errors";
+import { ApplicationException, IError } from "./utils/Errors";
 import cors from "cors";
+import { rateLimit } from "express-rate-limit";
 
 var whitelist = [
   "http://example1.com",
@@ -21,15 +22,22 @@ var corsOptions = {
     if (whitelist.indexOf(origin) !== -1) {
       callback(null, true);
     } else {
-      callback(new ApplicationExpection("Not allowed by CORS", 401));
+      callback(new ApplicationException("Not allowed by CORS", 401));
     }
   },
 };
-
+const limiter = rateLimit({
+  windowMs: 15 * 60 * 1000, // 15 minutes
+  limit: 100,
+  standardHeaders: "draft-8",
+  legacyHeaders: false,
+  ipv6Subnet: 56,
+});
 const bootstrap = async () => {
   await connectDB();
 
   app.use(cors(corsOptions));
+  app.use(limiter);
   app.use(express.json());
   app.use("/api/v1", router);
   app.use((err: IError, req: Request, res: Response, next: NextFunction) => {

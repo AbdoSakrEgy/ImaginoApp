@@ -32,7 +32,7 @@ class AuthServices {
             }),
         });
         if (!isEmailSended) {
-            throw new Errors_1.ApplicationExpection("Error while sending email", 400);
+            throw new Errors_1.ApplicationException("Error while sending email", 400);
         }
         // step: create new user
         const user = await user_model_1.UserModel.create({
@@ -46,7 +46,7 @@ class AuthServices {
             },
         });
         if (!user) {
-            throw new Errors_1.ApplicationExpection("Creation failed", 500);
+            throw new Errors_1.ApplicationException("Creation failed", 500);
         }
         // step: create token
         const accessToken = (0, jwt_1.createJwt)({ userId: user._id, userEmail: user.email }, process.env.ACCESS_SEGNATURE, {
@@ -69,11 +69,11 @@ class AuthServices {
         // step: check credentials
         const isUserExist = await user_model_1.UserModel.findOne({ email });
         if (!isUserExist) {
-            throw new Errors_1.ApplicationExpection("Invalid credentials", 404);
+            throw new Errors_1.ApplicationException("Invalid credentials", 404);
         }
         const user = isUserExist;
         if (!(await (0, bcrypt_1.compare)(password, user.password))) {
-            throw new Errors_1.ApplicationExpection("Invalid credentials", 401);
+            throw new Errors_1.ApplicationException("Invalid credentials", 401);
         }
         // step: check is 2FA active
         if (user.is2FAActive) {
@@ -89,7 +89,7 @@ class AuthServices {
                 }),
             });
             if (!isEmailSended) {
-                throw new Errors_1.ApplicationExpection("Error while sending email", 400);
+                throw new Errors_1.ApplicationException("Error while sending email", 400);
             }
             // ->step: update user
             const updatedUser = await user_model_1.UserModel.findOneAndUpdate({ _id: user._id }, {
@@ -125,7 +125,7 @@ class AuthServices {
         const authorization = req.headers.authorization;
         // step: check authorization
         if (!authorization) {
-            throw new Errors_1.ApplicationExpection("Authorization undefiend", 400);
+            throw new Errors_1.ApplicationException("Authorization undefiend", 400);
         }
         // step: decode authorization
         const { user, payload } = await (0, decodeToken_1.decodeToken)({
@@ -151,7 +151,7 @@ class AuthServices {
         // step: check user exitance
         const user = await user_model_1.UserModel.findOne({ email });
         if (!user) {
-            throw new Errors_1.ApplicationExpection("User not found", 400);
+            throw new Errors_1.ApplicationException("User not found", 400);
         }
         // step: check emailOtp
         if (!(await (0, bcrypt_1.compare)(firstOtp, user.emailOtp.otp))) {
@@ -275,12 +275,12 @@ class AuthServices {
         // step: check email existence
         const isUserExist = await user_model_1.UserModel.findOne({ email });
         if (!isUserExist) {
-            throw new Errors_1.ApplicationExpection("User not found", 404);
+            throw new Errors_1.ApplicationException("User not found", 404);
         }
         const user = isUserExist;
         // step: check if email otp not expired yet
         if (user.emailOtp?.expiredAt > new Date(Date.now())) {
-            throw new Errors_1.ApplicationExpection("Your OTP not expired yet", 400);
+            throw new Errors_1.ApplicationException("Your OTP not expired yet", 400);
         }
         // step: send email otp
         const otpCode = (0, createOtp_1.createOtp)();
@@ -294,7 +294,7 @@ class AuthServices {
             }),
         });
         if (!isEmailSended) {
-            throw new Errors_1.ApplicationExpection("Error while sending email", 400);
+            throw new Errors_1.ApplicationException("Error while sending email", 400);
         }
         // step: update emailOtp
         const updatedUset = await user_model_1.UserModel.findOneAndUpdate({ email: user.email }, {
@@ -317,11 +317,11 @@ class AuthServices {
         const { currentPassword, newPassword } = req.body;
         // step: check password correction
         if (!(await (0, bcrypt_1.compare)(currentPassword, user.password))) {
-            throw new Errors_1.ApplicationExpection("Invalid credentials", 401);
+            throw new Errors_1.ApplicationException("Invalid credentials", 401);
         }
         // step: check newPassword not equal currentPassword
         if (await (0, bcrypt_1.compare)(newPassword, user.password)) {
-            throw new Errors_1.ApplicationExpection("You can not make new password equal to old password", 400);
+            throw new Errors_1.ApplicationException("You can not make new password equal to old password", 400);
         }
         // step: update password and credentialsChangedAt
         const updatedUser = await user_model_1.UserModel.findOneAndUpdate({ _id: user._id }, {
@@ -345,12 +345,12 @@ class AuthServices {
         // step: check email existence
         const isUserExist = await user_model_1.UserModel.findOne({ email });
         if (!isUserExist) {
-            throw new Errors_1.ApplicationExpection("User not found", 404);
+            throw new Errors_1.ApplicationException("User not found", 404);
         }
         const user = isUserExist;
         // step: check if password otp not expired yet
         if (user.passwordOtp?.expiredAt > new Date(Date.now())) {
-            throw new Errors_1.ApplicationExpection("Your OTP not expired yet", 400);
+            throw new Errors_1.ApplicationException("Your OTP not expired yet", 400);
         }
         // step: send email otp
         const otpCode = (0, createOtp_1.createOtp)();
@@ -365,7 +365,7 @@ class AuthServices {
             }),
         });
         if (!isEmailSended) {
-            throw new Errors_1.ApplicationExpection("Error while sending email", 400);
+            throw new Errors_1.ApplicationException("Error while sending email", 400);
         }
         // step: update passwordOtp
         const updatedUser = await user_model_1.UserModel.findOneAndUpdate({ _id: user._id }, {
@@ -391,12 +391,12 @@ class AuthServices {
         // step: check email existence
         const isUserExist = await user_model_1.UserModel.findOne({ email });
         if (!isUserExist) {
-            throw new Errors_1.ApplicationExpection("User not found", 404);
+            throw new Errors_1.ApplicationException("User not found", 404);
         }
         const user = isUserExist;
         // step: check otp
         if (!(await (0, bcrypt_1.compare)(otp, user.passwordOtp.otp))) {
-            throw new Errors_1.ApplicationExpection("Invalid OTP", 400);
+            throw new Errors_1.ApplicationException("Invalid OTP", 400);
         }
         // step: change password
         const updatedUser = await user_model_1.UserModel.findOneAndUpdate({ email }, {
@@ -428,7 +428,7 @@ class AuthServices {
             }),
         });
         if (!isEmailSended) {
-            throw new Errors_1.ApplicationExpection("Error while sending email", 400);
+            throw new Errors_1.ApplicationException("Error while sending email", 400);
         }
         // step: save OTP
         const updatedUser = await user_model_1.UserModel.findOneAndUpdate({ _id: user._id }, {
@@ -464,13 +464,13 @@ class AuthServices {
         }
         // step: check otp value
         if (!user?.otp2FA?.otp) {
-            throw new Errors_1.ApplicationExpection("OTP not correct", 400);
+            throw new Errors_1.ApplicationException("OTP not correct", 400);
         }
         if (!(await (0, bcrypt_1.compare)(otp, user?.otp2FA?.otp))) {
-            throw new Errors_1.ApplicationExpection("OTP not correct", 400);
+            throw new Errors_1.ApplicationException("OTP not correct", 400);
         }
         if (user?.otp2FA?.expiredAt < new Date(Date.now())) {
-            throw new Errors_1.ApplicationExpection("OTP expired", 400);
+            throw new Errors_1.ApplicationException("OTP expired", 400);
         }
         // step: update 2fa
         const updatedUser = await user_model_1.UserModel.findOneAndUpdate({ _id: user._id }, { $set: { is2FAActive: true } }, {
@@ -486,10 +486,10 @@ class AuthServices {
         const user = await user_model_1.UserModel.findOne({ _id: userId });
         // step: check OTP
         if (!user?.otp2FA?.otp) {
-            throw new Errors_1.ApplicationExpection("Invalid credentials", 400);
+            throw new Errors_1.ApplicationException("Invalid credentials", 400);
         }
         if (!(await (0, bcrypt_1.compare)(otp, user?.otp2FA?.otp))) {
-            throw new Errors_1.ApplicationExpection("Invalid credentials", 400);
+            throw new Errors_1.ApplicationException("Invalid credentials", 400);
         }
         // step: create token
         const accessToken = (0, jwt_1.createJwt)({ userId: user._id, userEmail: user.email }, process.env.ACCESS_SEGNATURE, {

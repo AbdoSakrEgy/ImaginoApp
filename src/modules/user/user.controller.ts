@@ -27,7 +27,6 @@ router.patch(
   validation(uploadProfileImageSchema),
   userServices.uploadProfileImage
 );
-//! next api after use it from browser is generate => Error [ERR_HTTP_HEADERS_SENT]...
 router.get("/get-file/*path", userServices.getFile);
 router.get(
   "/create-presignedUrl-toGetFile/*path",

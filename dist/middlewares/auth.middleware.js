@@ -7,7 +7,7 @@ const auth = async (req, res, next) => {
     // step: check authorization
     const { authorization } = req.headers;
     if (!authorization) {
-        throw new Errors_js_1.ApplicationExpection("Authorization is required", 400);
+        throw new Errors_js_1.ApplicationException("Authorization is required", 400);
     }
     const { user, payload } = await (0, decodeToken_js_1.decodeToken)({
         authorization,

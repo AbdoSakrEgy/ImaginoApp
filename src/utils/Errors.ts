@@ -2,7 +2,7 @@ export interface IError extends Error {
   statusCode: number;
 }
 
-export class ApplicationExpection extends Error {
+export class ApplicationException extends Error {
   statusCode: number;
 
   constructor(msg: string, statusCode: number, options?: ErrorOptions) {
@@ -11,13 +11,13 @@ export class ApplicationExpection extends Error {
   }
 }
 
-export class ValidationError extends ApplicationExpection {
+export class ValidationError extends ApplicationException {
   constructor(msg: string, statusCode: number) {
     super(msg, statusCode);
   }
 }
 
-export class NotValidEmail extends ApplicationExpection {
+export class NotValidEmail extends ApplicationException {
   constructor(msg: string = "Not valid email", statusCode: number = 400) {
     super(msg, statusCode);
   }

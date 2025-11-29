@@ -13,13 +13,13 @@ const userModel = user_model_js_1.UserModel;
 const decodeToken = async ({ authorization, tokenType = TokenTypesEnum.access, }) => {
     // step: bearer key
     if (!authorization.startsWith(process.env.BEARER_KEY)) {
-        throw new Errors_js_1.ApplicationExpection("Invalid bearer key", 400);
+        throw new Errors_js_1.ApplicationException("Invalid bearer key", 400);
     }
     // step: token validation
     let [bearer, token] = authorization.split(" ");
     // step: check authorization existence
     if (!token || token == null) {
-        throw new Errors_js_1.ApplicationExpection("Invalid authorization", 400);
+        throw new Errors_js_1.ApplicationException("Invalid authorization", 400);
     }
     let privateKey = "";
     if (tokenType == TokenTypesEnum.access) {
@@ -32,12 +32,12 @@ const decodeToken = async ({ authorization, tokenType = TokenTypesEnum.access, }
     // step: user existence
     const user = await userModel.findOne({ _id: payload.userId });
     if (!user) {
-        throw new Errors_js_1.ApplicationExpection("User not found", 404);
+        throw new Errors_js_1.ApplicationException("User not found", 404);
     }
     // step: credentials changing
     if (user.credentialsChangedAt) {
         if (user.credentialsChangedAt.getTime() > payload.iat * 1000) {
-            throw new Errors_js_1.ApplicationExpection("You have to login", 400);
+            throw new Errors_js_1.ApplicationException("You have to login", 400);
         }
     }
     // step: return user & payload
