@@ -4,7 +4,7 @@ exports.UserServices = void 0;
 const user_model_1 = require("./user.model");
 const successHandler_1 = require("../../utils/successHandler");
 const Errors_1 = require("../../utils/Errors");
-const cloudinary_services_1 = require("../../utils/multer/cloudinary.services");
+const cloudinary_service_1 = require("../../utils/cloudinary/cloudinary.service");
 class UserServices {
     userModel = user_model_1.UserModel;
     constructor() { }
@@ -29,7 +29,7 @@ class UserServices {
         if (!file) {
             throw new Errors_1.ApplicationException("profileImage is required", 400);
         }
-        const uploadResult = await (0, cloudinary_services_1.uploadSingleFile)({
+        const uploadResult = await (0, cloudinary_service_1.uploadSingleFile)({
             fileLocation: file.path,
             storagePathOnCloudinary: `users/${user._id}/profile`,
         });
@@ -45,7 +45,9 @@ class UserServices {
         const user = res.locals.user;
         const currentUser = await this.userModel.findById(user._id);
         if (currentUser?.profileImage?.public_id) {
-            await (0, cloudinary_services_1.destroySingleFile)({ public_id: currentUser.profileImage.public_id });
+            await (0, cloudinary_service_1.destroySingleFile)({
+                public_id: currentUser.profileImage.public_id,
+            });
         }
         const updatedUser = await this.userModel.findOneAndUpdate({ _id: user._id }, { $unset: { profileImage: "" } }, { new: true });
         return (0, successHandler_1.successHandler)({
@@ -53,22 +55,6 @@ class UserServices {
             message: "Profile image deleted successfully",
             result: { user: updatedUser },
         });
-    };
-    // ============================ getFile ============================
-    getFile = async (req, res, next) => {
-        (0, successHandler_1.successHandler)({ res });
-    };
-    // ============================ createPresignedUrlToGetFile ============================
-    createPresignedUrlToGetFile = async (req, res, next) => {
-        return (0, successHandler_1.successHandler)({ res });
-    };
-    // ============================ deleteFile ============================
-    deleteFile = async (req, res, next) => {
-        return (0, successHandler_1.successHandler)({ res });
-    };
-    // ============================ deleteMultiFiles ============================
-    deleteMultiFiles = async (req, res, next) => {
-        return (0, successHandler_1.successHandler)({ res });
     };
     // ============================ updateBasicInfo ============================
     updateBasicInfo = async (req, res, next) => {

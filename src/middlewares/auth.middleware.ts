@@ -16,7 +16,6 @@ export const auth = async (
     authorization,
     tokenType: TokenTypesEnum.access,
   });
-  console.log({ user });
   // step: modify res.locals
   res.locals.user = user;
   res.locals.payload = payload;

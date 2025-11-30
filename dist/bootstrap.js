@@ -15,7 +15,12 @@ const db_connection_1 = require("./DB/db.connection");
 const Errors_1 = require("./utils/Errors");
 const cors_1 = __importDefault(require("cors"));
 const express_rate_limit_1 = require("express-rate-limit");
-var whitelist = ["http://example1.com", "http://example2.com", "http://127.0.0.1:5501", undefined];
+var whitelist = [
+    "http://example1.com",
+    "http://example2.com",
+    "http://127.0.0.1:5501",
+    undefined,
+];
 var corsOptions = {
     origin: function (origin, callback) {
         if (whitelist.indexOf(origin) !== -1) {
@@ -28,7 +33,7 @@ var corsOptions = {
 };
 const limiter = (0, express_rate_limit_1.rateLimit)({
     windowMs: 15 * 60 * 1000, // 15 minutes
-    limit: 100,
+    limit: 200,
     standardHeaders: "draft-8",
     legacyHeaders: false,
     ipv6Subnet: 56,

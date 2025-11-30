@@ -1,22 +1,22 @@
 import { NextFunction, Request, Response } from "express";
 import mongoose, { Types } from "mongoose";
 
-export const Gender = {
+export const GenderEnum = {
   MALE: "male",
   FEMALE: "female",
 };
-export const Role = {
+export const RoleEnum = {
   ADMIN: "admin",
   USER: "user",
 };
-Object.freeze(Gender);
-Object.freeze(Role);
-
-export const PricingPlan = {
+export const PricingPlanEnum = {
+  FREE: "free",
   BASIC: "basic",
   PRO: "pro",
 };
-Object.freeze(PricingPlan);
+Object.freeze(GenderEnum);
+Object.freeze(RoleEnum);
+Object.freeze(PricingPlanEnum);
 
 export interface IUser {
   firstName: string;
@@ -35,18 +35,32 @@ export interface IUser {
   credentialsChangedAt: Date;
   isActive: boolean;
   deletedBy: mongoose.Schema.Types.ObjectId;
-  profileImage: { public_id: string; secure_url: string };
   is2FAActive: boolean;
   otp2FA: { otp: string; expiredAt: Date };
-  pricingPlan?: string;
+  profileImage: { public_id: string; secure_url: string };
+  pricingPlan: string;
+  avaliableCredits: number;
 }
 
 export interface IUserServices {
-  userProfile(req: Request, res: Response, next: NextFunction): Promise<Response>;
-  uploadProfileImage(req: Request, res: Response, next: NextFunction): Promise<Response>;
-  getFile(req: Request, res: Response, next: NextFunction): Promise<void>;
-  createPresignedUrlToGetFile(req: Request, res: Response, next: NextFunction): Promise<Response>;
-  deleteFile(req: Request, res: Response, next: NextFunction): Promise<Response>;
-  deleteMultiFiles(req: Request, res: Response, next: NextFunction): Promise<Response>;
-  updateBasicInfo(req: Request, res: Response, next: NextFunction): Promise<Response>;
+  userProfile(
+    req: Request,
+    res: Response,
+    next: NextFunction
+  ): Promise<Response>;
+  uploadProfileImage(
+    req: Request,
+    res: Response,
+    next: NextFunction
+  ): Promise<Response>;
+  deleteProfileImage(
+    req: Request,
+    res: Response,
+    next: NextFunction
+  ): Promise<Response>;
+  updateBasicInfo(
+    req: Request,
+    res: Response,
+    next: NextFunction
+  ): Promise<Response>;
 }

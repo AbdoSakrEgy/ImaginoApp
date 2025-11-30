@@ -11,7 +11,12 @@ import { ApplicationException, IError } from "./utils/Errors";
 import cors from "cors";
 import { rateLimit } from "express-rate-limit";
 
-var whitelist = ["http://example1.com", "http://example2.com", "http://127.0.0.1:5501", undefined];
+var whitelist = [
+  "http://example1.com",
+  "http://example2.com",
+  "http://127.0.0.1:5501",
+  undefined,
+];
 var corsOptions = {
   origin: function (origin: any, callback: any) {
     if (whitelist.indexOf(origin) !== -1) {
@@ -23,7 +28,7 @@ var corsOptions = {
 };
 const limiter = rateLimit({
   windowMs: 15 * 60 * 1000, // 15 minutes
-  limit: 100,
+  limit: 200,
   standardHeaders: "draft-8",
   legacyHeaders: false,
   ipv6Subnet: 56,

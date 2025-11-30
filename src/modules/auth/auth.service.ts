@@ -580,7 +580,6 @@ export class AuthServices implements IAuthServcies {
   ): Promise<Response> => {
     const user = res.locals.user;
     const otp = (req.body as activeDeactive2FADTO)?.otp;
-    console.log({ otp });
     // step: check otp existence
     if (!otp) {
       const updatedUser = await UserModel.findOneAndUpdate(

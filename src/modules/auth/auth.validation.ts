@@ -1,5 +1,5 @@
 import z from "zod";
-import { Gender, Role } from "../../types/user.module.types";
+import { GenderEnum, RoleEnum } from "../../types/user.module.types";
 
 export const registerSchema = z
   .object({
@@ -8,9 +8,9 @@ export const registerSchema = z
     email: z.email(),
     password: z.string(),
     age: z.number().min(18).max(200).optional(),
-    gender: z.literal([Gender.MALE, Gender.FEMALE]).optional(),
+    gender: z.literal([GenderEnum.MALE, GenderEnum.FEMALE]).optional(),
     phone: z.string().optional(),
-    role: z.literal([Role.USER, Role.ADMIN]).optional(),
+    role: z.literal([RoleEnum.USER, RoleEnum.ADMIN]).optional(),
   })
   .superRefine((args, ctx) => {
     if (args.phone) {
