@@ -79,7 +79,15 @@ const userSchema = new mongoose_1.Schema({
     isActive: { type: Boolean, default: true },
     deletedBy: { type: mongoose_1.default.Schema.Types.ObjectId, ref: "user" },
     // others
-    profileImage: { type: String },
+    profileImage: {
+        public_id: { type: String },
+        secure_url: { type: String },
+    },
+    pricingPlan: {
+        type: String,
+        enum: Object.values(user_module_types_1.PricingPlan),
+        default: undefined,
+    },
     is2FAActive: { type: Boolean, default: false },
     otp2FA: { otp: { type: String }, expiredAt: Date },
 }, { timestamps: true, toJSON: { virtuals: true }, toObject: { virtuals: true } });
