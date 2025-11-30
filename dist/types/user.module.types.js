@@ -1,6 +1,6 @@
 "use strict";
 Object.defineProperty(exports, "__esModule", { value: true });
-exports.Role = exports.Gender = void 0;
+exports.PricingPlan = exports.Role = exports.Gender = void 0;
 exports.Gender = {
     MALE: "male",
     FEMALE: "female",
@@ -11,3 +11,8 @@ exports.Role = {
 };
 Object.freeze(exports.Gender);
 Object.freeze(exports.Role);
+exports.PricingPlan = {
+    BASIC: "basic",
+    PRO: "pro",
+};
+Object.freeze(exports.PricingPlan);
