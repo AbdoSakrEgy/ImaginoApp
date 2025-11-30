@@ -1,7 +1,11 @@
 import Stripe from "stripe";
 import { ApplicationException } from "../Errors";
 
-const stripe = new Stripe(process.env.STIPE_SECRET_KEY as string);
+const secretKey = process.env.STRIPE_SECRET_KEY as string;
+if (!secretKey) {
+  throw new Error("STRIPE_SECRET_KEY is not set");
+}
+const stripe = new Stripe(secretKey);
 // createCheckoutSession
 export async function createCheckoutSession({
   success_url = process.env.SUCCESS_URL as string,

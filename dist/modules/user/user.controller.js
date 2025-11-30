@@ -15,4 +15,6 @@ router.get("/user-profile/:userId", auth_middleware_1.auth, userServices.userPro
 router.patch("/upload-profile-image", auth_middleware_1.auth, (0, multer_upload_1.multerUpload)({ storeIn: multer_upload_1.StoreInEnum.disk, sendedFileDest: "profile" }).single("profileImage"), (0, validation_middleware_1.validation)(user_validation_1.uploadProfileImageSchema), userServices.uploadProfileImage);
 router.delete("/delete-profile-image", auth_middleware_1.auth, userServices.deleteProfileImage);
 router.patch("/update-basic-info", auth_middleware_1.auth, (0, validation_middleware_1.validation)(user_validation_1.updateBasicInfoSchema), userServices.updateBasicInfo);
+router.post("/pay-with-stripe", auth_middleware_1.auth, (0, validation_middleware_1.validation)(user_validation_1.payWithStripeSchema), userServices.payWithStripe);
+router.post("/web-hook-with-stripe", userServices.webHookWithStripe);
 exports.default = router;

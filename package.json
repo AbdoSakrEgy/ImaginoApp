@@ -32,6 +32,7 @@
     "zod": "^4.1.12"
   },
   "devDependencies": {
+    "@express-rate-limit/tsconfig": "^1.0.2",
     "@types/bcrypt": "^6.0.0",
     "@types/crypto-js": "^4.2.2",
     "@types/express": "^5.0.5",

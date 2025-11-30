@@ -9,6 +9,7 @@ import {
   uploadAvatarImageSchema,
   uploadProfileImageSchema,
   uploadProfileVideoSchema,
+  payWithStripeSchema,
 } from "./user.validation";
 import {
   fileTypes,
@@ -43,5 +44,12 @@ router.patch(
   validation(updateBasicInfoSchema),
   userServices.updateBasicInfo
 );
+router.post(
+  "/pay-with-stripe",
+  auth,
+  validation(payWithStripeSchema),
+  userServices.payWithStripe
+);
+router.post("/web-hook-with-stripe", userServices.webHookWithStripe);
 
 export default router;

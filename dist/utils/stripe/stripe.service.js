@@ -9,7 +9,11 @@ exports.createRefund = createRefund;
 exports.retrievePaymentIntent = retrievePaymentIntent;
 const stripe_1 = __importDefault(require("stripe"));
 const Errors_1 = require("../Errors");
-const stripe = new stripe_1.default(process.env.STIPE_SECRET_KEY);
+const secretKey = process.env.STRIPE_SECRET_KEY;
+if (!secretKey) {
+    throw new Error("STRIPE_SECRET_KEY is not set");
+}
+const stripe = new stripe_1.default(secretKey);
 // createCheckoutSession
 async function createCheckoutSession({ success_url = process.env.SUCCESS_URL, cancel_url = process.env.CANCEL_URL, mode = "payment", discounts = [], metadata = {}, line_items, customer_email, }) {
     const session = await stripe.checkout.sessions.create({

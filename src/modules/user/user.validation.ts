@@ -1,6 +1,6 @@
 import z from "zod";
 import mongoose from "mongoose";
-import { GenderEnum } from "../../types/user.module.types";
+import { GenderEnum, PricingPlanEnum } from "../../types/user.module.types";
 
 export const uploadProfileImageSchema = z.object({
   profileImage: z.object(),
@@ -61,4 +61,9 @@ export const blockUserSchema = z.object({
 
 export const deleteFriendRequestSchema = z.object({
   friendRequestId: z.string(),
+});
+
+export const payWithStripeSchema = z.object({
+  plan: z.enum(Object.values(PricingPlanEnum)),
+  userCoupon: z.string().optional(),
 });

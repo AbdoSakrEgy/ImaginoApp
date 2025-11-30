@@ -65,6 +65,11 @@ const userSchema = new Schema<IUser>(
       public_id: { type: String },
       secure_url: { type: String },
     },
+    // payment
+    checkoutSessionId: { type: String },
+    paymentIntentId: { type: String },
+    refundId: { type: String },
+    refundedAt: { type: Date },
     pricingPlan: {
       type: String,
       enum: Object.values(PricingPlanEnum),

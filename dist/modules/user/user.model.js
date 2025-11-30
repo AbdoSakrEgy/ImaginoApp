@@ -93,6 +93,11 @@ const userSchema = new mongoose_1.Schema({
         public_id: { type: String },
         secure_url: { type: String },
     },
+    // payment
+    checkoutSessionId: { type: String },
+    paymentIntentId: { type: String },
+    refundId: { type: String },
+    refundedAt: { type: Date },
     pricingPlan: {
         type: String,
         enum: Object.values(user_module_types_1.PricingPlanEnum),

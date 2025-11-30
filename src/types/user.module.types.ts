@@ -38,6 +38,10 @@ export interface IUser {
   is2FAActive: boolean;
   otp2FA: { otp: string; expiredAt: Date };
   profileImage: { public_id: string; secure_url: string };
+  checkoutSessionId: string;
+  paymentIntentId: string;
+  refundId: string;
+  refundedAt: Date;
   pricingPlan: string;
   avaliableCredits: number;
 }

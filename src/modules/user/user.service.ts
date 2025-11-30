@@ -2,11 +2,16 @@ import { UserModel } from "./user.model";
 import { successHandler } from "../../utils/successHandler";
 import { NextFunction, Request, Response } from "express";
 import { ApplicationException } from "../../utils/Errors";
-import { IUserServices } from "../../types/user.module.types";
+import { IUserServices, PricingPlanEnum } from "../../types/user.module.types";
 import {
   destroySingleFile,
   uploadSingleFile,
 } from "../../utils/cloudinary/cloudinary.service";
+import Stripe from "stripe";
+import {
+  createCheckoutSession,
+  createCoupon,
+} from "../../utils/stripe/stripe.service";
 
 export class UserServices implements IUserServices {
   private userModel = UserModel;
@@ -122,5 +127,93 @@ export class UserServices implements IUserServices {
       message: "Basic info updated successfully",
       result: { user: updatedUser },
     });
+  };
+
+  // ============================ payWithStripe ============================
+  payWithStripe = async (
+    req: Request,
+    res: Response,
+    next: NextFunction
+  ): Promise<Response> => {
+    const user = res.locals.user;
+    const { plan, userCoupon } = req.body;
+    // step: check coupon validation
+    let checkCoupon = undefined;
+    if (userCoupon) {
+      const allowedCoupons = [
+        { code: "ADF-DFA-31-DA", offer: 15 },
+        { code: "JMY-GHR-65-CS", offer: 30 },
+      ];
+      checkCoupon = allowedCoupons.filter((item) => item.code == userCoupon)[0];
+      if (!checkCoupon) {
+        throw new ApplicationException("Invalid coupon", 400);
+      }
+    }
+    // step: calculate plan price
+    let costAmount = 0;
+    if (plan == PricingPlanEnum.BASIC) {
+      costAmount = 50;
+    }
+    if (plan == PricingPlanEnum.PRO) {
+      costAmount = 100;
+    }
+    // step: collect createCheckoutSession data
+    const line_items = [
+      {
+        price_data: {
+          currency: "egp",
+          product_data: {
+            name: `${user.firstName} will subscripe to ${plan} plan`,
+            description: "plan description",
+          },
+          unit_amount: costAmount * 100,
+        },
+        quantity: 1,
+      },
+    ];
+    const discounts: Stripe.Checkout.SessionCreateParams.Discount[] = [];
+    if (checkCoupon) {
+      const coupon = await createCoupon({
+        duration: "once",
+        currency: "egp",
+        percent_off: checkCoupon.offer,
+      });
+      discounts.push({ coupon: coupon.id });
+    }
+    // step: apply stripe services
+    // createCheckoutSession
+    const checkoutSession = await createCheckoutSession({
+      customer_email: user.email,
+      line_items,
+      mode: "payment",
+      discounts,
+      metadata: { userId: user._id.toString(), plan },
+    });
+    // Store the checkout session ID for reference
+    user.checkoutSessionId = checkoutSession.id;
+    await user.save();
+    return successHandler({ res, result: { checkoutSession } });
+  };
+
+  // ============================ webHookWithStripe ============================
+  webHookWithStripe = async (
+    req: Request,
+    res: Response,
+    next: NextFunction
+  ): Promise<Response> => {
+    const { userId, plan } = req.body.data.object.metadata;
+    // step: check order existence
+    const user = await UserModel.findOneAndUpdate(
+      { _id: userId },
+      {
+        $set: {
+          paymentIntentId: req.body.data.object.payment_intent,
+          pricingPlan: plan,
+          avaliableCredits: 200,
+        },
+      }
+    );
+    if (!user) throw new ApplicationException("User not found", 404);
+    return successHandler({ res, message: "webHookWithStripe done" });
   };
 }
