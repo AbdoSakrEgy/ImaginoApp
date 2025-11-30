@@ -15,6 +15,7 @@ class AuthServices {
     // ============================ register ============================
     register = async (req, res, next) => {
         const { firstName, lastName, email, password } = req.body;
+        console.log({ firstName, lastName, email, password });
         // step: check user existence
         const isUserExist = await user_model_1.UserModel.findOne({ email });
         if (isUserExist) {

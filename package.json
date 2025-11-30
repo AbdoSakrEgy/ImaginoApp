@@ -5,7 +5,8 @@
   "main": "index.js",
   "scripts": {
     "build": "tsc --watch",
-    "start": "node --watch ./dist/index.js"
+    "start": "node --watch ./dist/index.js",
+    "format": "prettier --write \"src/**/*.{ts,tsx,js,jsx,json,md}\""
   },
   "keywords": [],
   "author": "",
@@ -38,6 +39,7 @@
     "@types/multer": "^2.0.0",
     "@types/node": "^24.10.1",
     "@types/nodemailer": "^7.0.4",
+    "prettier": "^3.7.3",
     "typescript": "^5.9.3"
   }
 }

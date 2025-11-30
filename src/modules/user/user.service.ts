@@ -25,7 +25,11 @@ export class UserServices implements IUserServices {
   };
 
   // ============================ uploadProfileImage ============================
-  uploadProfileImage = async (req: Request, res: Response, next: NextFunction): Promise<Response> => {
+  uploadProfileImage = async (
+    req: Request,
+    res: Response,
+    next: NextFunction,
+  ): Promise<Response> => {
     const user = res.locals.user;
     const file = req.file;
 
@@ -41,7 +45,7 @@ export class UserServices implements IUserServices {
     const updatedUser = await this.userModel.findOneAndUpdate(
       { _id: user._id },
       { $set: { profileImage: uploadResult } },
-      { new: true }
+      { new: true },
     );
 
     return successHandler({
@@ -52,7 +56,11 @@ export class UserServices implements IUserServices {
   };
 
   // ============================ deleteProfileImage ============================
-  deleteProfileImage = async (req: Request, res: Response, next: NextFunction): Promise<Response> => {
+  deleteProfileImage = async (
+    req: Request,
+    res: Response,
+    next: NextFunction,
+  ): Promise<Response> => {
     const user = res.locals.user;
 
     const currentUser = await this.userModel.findById(user._id);
@@ -63,7 +71,7 @@ export class UserServices implements IUserServices {
     const updatedUser = await this.userModel.findOneAndUpdate(
       { _id: user._id },
       { $unset: { profileImage: "" } },
-      { new: true }
+      { new: true },
     );
 
     return successHandler({
@@ -113,7 +121,7 @@ export class UserServices implements IUserServices {
         new: true,
         runValidators: true,
         context: "query",
-      }
+      },
     );
 
     return successHandler({

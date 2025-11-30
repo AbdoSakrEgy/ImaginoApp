@@ -28,12 +28,9 @@ export class AuthServices implements IAuthServcies {
   constructor() {}
 
   // ============================ register ============================
-  register = async (
-    req: Request,
-    res: Response,
-    next: NextFunction
-  ): Promise<Response> => {
+  register = async (req: Request, res: Response, next: NextFunction): Promise<Response> => {
     const { firstName, lastName, email, password }: registerDTO = req.body;
+    console.log({ firstName, lastName, email, password });
     // step: check user existence
     const isUserExist = await UserModel.findOne({ email });
     if (isUserExist) {
@@ -74,7 +71,7 @@ export class AuthServices implements IAuthServcies {
       {
         expiresIn: "1h",
         jwtid: createOtp(),
-      }
+      },
     );
     const refreshToken = createJwt(
       { userId: user._id, userEmail: user.email },
@@ -82,7 +79,7 @@ export class AuthServices implements IAuthServcies {
       {
         expiresIn: "7d",
         jwtid: createOtp(),
-      }
+      },
     );
     return successHandler({
       res,
@@ -92,11 +89,7 @@ export class AuthServices implements IAuthServcies {
   };
 
   // ============================ login ============================
-  login = async (
-    req: Request,
-    res: Response,
-    next: NextFunction
-  ): Promise<Response> => {
+  login = async (req: Request, res: Response, next: NextFunction): Promise<Response> => {
     const { email, password }: loginDTO = req.body;
     // step: check credentials
     const isUserExist = await UserModel.findOne({ email });
@@ -133,7 +126,7 @@ export class AuthServices implements IAuthServcies {
               expiredAt: new Date(Date.now() + 5 * 60 * 1000),
             },
           },
-        }
+        },
       );
       return successHandler({
         res,
@@ -147,7 +140,7 @@ export class AuthServices implements IAuthServcies {
       {
         expiresIn: "1h",
         jwtid: createOtp(),
-      }
+      },
     );
     const refreshToken = createJwt(
       { userId: user._id, userEmail: user.email },
@@ -155,7 +148,7 @@ export class AuthServices implements IAuthServcies {
       {
         expiresIn: "7d",
         jwtid: createOtp(),
-      }
+      },
     );
     return successHandler({
       res,
@@ -165,11 +158,7 @@ export class AuthServices implements IAuthServcies {
   };
 
   // ============================ refresh-token ============================
-  refreshToken = async (
-    req: Request,
-    res: Response,
-    next: NextFunction
-  ): Promise<Response> => {
+  refreshToken = async (req: Request, res: Response, next: NextFunction): Promise<Response> => {
     const authorization = req.headers.authorization;
     // step: check authorization
     if (!authorization) {
@@ -187,23 +176,15 @@ export class AuthServices implements IAuthServcies {
     };
     const jwtid = createOtp();
     // const jwtid = "666";
-    const accessToken = createJwt(
-      newPayload,
-      process.env.ACCESS_SEGNATURE as string,
-      {
-        expiresIn: "1h",
-        jwtid,
-      }
-    );
+    const accessToken = createJwt(newPayload, process.env.ACCESS_SEGNATURE as string, {
+      expiresIn: "1h",
+      jwtid,
+    });
     return successHandler({ res, result: { accessToken } });
   };
 
   // ============================ confirmEmail ============================
-  confirmEmail = async (
-    req: Request,
-    res: Response,
-    next: NextFunction
-  ): Promise<Response> => {
+  confirmEmail = async (req: Request, res: Response, next: NextFunction): Promise<Response> => {
     const { email, firstOtp, secondOtp }: confirmEmaiDTO = req.body;
     // step: check user exitance
     const user = await UserModel.findOne({ email });
@@ -222,7 +203,7 @@ export class AuthServices implements IAuthServcies {
       // step: confirm email
       const updatedUser = await UserModel.findOneAndUpdate(
         { email: user.email },
-        { $set: { emailConfirmed: new Date() } }
+        { $set: { emailConfirmed: new Date() } },
       );
       return successHandler({ res, message: "Email confirmed successfully" });
     }
@@ -255,7 +236,7 @@ export class AuthServices implements IAuthServcies {
     const newEmail = user.newEmail;
     const updatedUser = await UserModel.findOneAndUpdate(
       { email: user.email },
-      { $set: { email: newEmail } }
+      { $set: { email: newEmail } },
     );
     return successHandler({
       res,
@@ -264,11 +245,7 @@ export class AuthServices implements IAuthServcies {
   };
 
   // ============================ updateEmail ============================
-  updateEmail = async (
-    req: Request,
-    res: Response,
-    next: NextFunction
-  ): Promise<Response> => {
+  updateEmail = async (req: Request, res: Response, next: NextFunction): Promise<Response> => {
     const user = res.locals.user;
     const { newEmail }: updateEmaiDTO = req.body;
     // step: check if email confirmed
@@ -335,7 +312,7 @@ export class AuthServices implements IAuthServcies {
         new: true,
         runValidators: true,
         context: "query",
-      }
+      },
     );
 
     return successHandler({
@@ -346,11 +323,7 @@ export class AuthServices implements IAuthServcies {
   };
 
   // ============================ resendEmailOtp ============================
-  resendEmailOtp = async (
-    req: Request,
-    res: Response,
-    next: NextFunction
-  ): Promise<Response> => {
+  resendEmailOtp = async (req: Request, res: Response, next: NextFunction): Promise<Response> => {
     const { email }: resendEmailOtpDTO = req.body;
     // step: check email existence
     const isUserExist = await UserModel.findOne({ email });
@@ -391,17 +364,13 @@ export class AuthServices implements IAuthServcies {
         new: true,
         runValidators: true,
         context: "query",
-      }
+      },
     );
     return successHandler({ res, message: "OTP sended successfully" });
   };
 
   // ============================ updatePassword ============================
-  updatePassword = async (
-    req: Request,
-    res: Response,
-    next: NextFunction
-  ): Promise<Response> => {
+  updatePassword = async (req: Request, res: Response, next: NextFunction): Promise<Response> => {
     const user = res.locals.user;
     const { currentPassword, newPassword }: updatePasswordDTO = req.body;
     // step: check password correction
@@ -410,10 +379,7 @@ export class AuthServices implements IAuthServcies {
     }
     // step: check newPassword not equal currentPassword
     if (await compare(newPassword, user.password)) {
-      throw new ApplicationException(
-        "You can not make new password equal to old password",
-        400
-      );
+      throw new ApplicationException("You can not make new password equal to old password", 400);
     }
     // step: update password and credentialsChangedAt
     const updatedUser = await UserModel.findOneAndUpdate(
@@ -428,7 +394,7 @@ export class AuthServices implements IAuthServcies {
         new: true,
         runValidators: true,
         context: "query",
-      }
+      },
     );
     return successHandler({
       res,
@@ -437,11 +403,7 @@ export class AuthServices implements IAuthServcies {
   };
 
   // ============================ forgetPassword ============================
-  forgetPassword = async (
-    req: Request,
-    res: Response,
-    next: NextFunction
-  ): Promise<Response> => {
+  forgetPassword = async (req: Request, res: Response, next: NextFunction): Promise<Response> => {
     const { email }: forgetPasswordDTO = req.body;
     // step: check email existence
     const isUserExist = await UserModel.findOne({ email });
@@ -483,7 +445,7 @@ export class AuthServices implements IAuthServcies {
         new: true,
         runValidators: true,
         context: "query",
-      }
+      },
     );
     return successHandler({
       res,
@@ -492,11 +454,7 @@ export class AuthServices implements IAuthServcies {
   };
 
   // ============================ changePassword ============================
-  changePassword = async (
-    req: Request,
-    res: Response,
-    next: NextFunction
-  ): Promise<Response> => {
+  changePassword = async (req: Request, res: Response, next: NextFunction): Promise<Response> => {
     const { email, otp, newPassword }: changePasswordDTO = req.body;
     // step: check email existence
     const isUserExist = await UserModel.findOne({ email });
@@ -520,7 +478,7 @@ export class AuthServices implements IAuthServcies {
         new: true,
         runValidators: true,
         context: "query",
-      }
+      },
     );
     return successHandler({
       res,
@@ -529,11 +487,7 @@ export class AuthServices implements IAuthServcies {
   };
 
   // ============================ enable2FA ============================
-  enable2FA = async (
-    req: Request,
-    res: Response,
-    next: NextFunction
-  ): Promise<Response> => {
+  enable2FA = async (req: Request, res: Response, next: NextFunction): Promise<Response> => {
     const user = res.locals.user;
     // step: send email otp
     const otpCode = createOtp();
@@ -564,7 +518,7 @@ export class AuthServices implements IAuthServcies {
         new: true,
         runValidators: true,
         context: "query",
-      }
+      },
     );
     return successHandler({
       res,
@@ -576,7 +530,7 @@ export class AuthServices implements IAuthServcies {
   activeDeactive2FA = async (
     req: Request,
     res: Response,
-    next: NextFunction
+    next: NextFunction,
   ): Promise<Response> => {
     const user = res.locals.user;
     const otp = (req.body as activeDeactive2FADTO)?.otp;
@@ -590,7 +544,7 @@ export class AuthServices implements IAuthServcies {
           new: true,
           runValidators: true,
           context: "query",
-        }
+        },
       );
       return successHandler({ res, message: "2FA disabled successfully" });
     }
@@ -612,17 +566,13 @@ export class AuthServices implements IAuthServcies {
         new: true,
         runValidators: true,
         context: "query",
-      }
+      },
     );
     return successHandler({ res, message: "2FA enabled successfully" });
   };
 
   // ============================ check2FAOTP ============================
-  check2FAOTP = async (
-    req: Request,
-    res: Response,
-    next: NextFunction
-  ): Promise<Response> => {
+  check2FAOTP = async (req: Request, res: Response, next: NextFunction): Promise<Response> => {
     const { userId, otp } = req.body as check2FAOTPADTO;
     const user = await UserModel.findOne({ _id: userId });
     // step: check OTP
@@ -639,7 +589,7 @@ export class AuthServices implements IAuthServcies {
       {
         expiresIn: "1h",
         jwtid: createOtp(),
-      }
+      },
     );
     const refreshToken = createJwt(
       { userId: user._id, userEmail: user.email },
@@ -647,7 +597,7 @@ export class AuthServices implements IAuthServcies {
       {
         expiresIn: "7d",
         jwtid: createOtp(),
-      }
+      },
     );
     return successHandler({
       res,
@@ -657,11 +607,7 @@ export class AuthServices implements IAuthServcies {
   };
 
   // ============================ logout ============================
-  logout = async (
-    req: Request,
-    res: Response,
-    next: NextFunction
-  ): Promise<Response> => {
+  logout = async (req: Request, res: Response, next: NextFunction): Promise<Response> => {
     const user = res.locals.user;
     // step: change credentialsChangedAt
     const updatedUser = await UserModel.findOneAndUpdate(
@@ -675,7 +621,7 @@ export class AuthServices implements IAuthServcies {
         new: true,
         runValidators: true,
         context: "query",
-      }
+      },
     );
     return successHandler({
       res,

@@ -29,8 +29,7 @@ export const registerSchema = z
         ctx.addIssue({
           code: "custom",
           path: ["email"],
-          message:
-            "zzzzz@gmail.com not valid email to use :), test custom validation",
+          message: "zzzzz@gmail.com not valid email to use :), test custom validation",
         });
       }
     }

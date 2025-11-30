@@ -18,6 +18,7 @@ const express_rate_limit_1 = require("express-rate-limit");
 var whitelist = ["http://example1.com", "http://example2.com", "http://127.0.0.1:5501", undefined];
 var corsOptions = {
     origin: function (origin, callback) {
+        console.log("Origin:", origin);
         if (whitelist.indexOf(origin) !== -1) {
             callback(null, true);
         }
@@ -44,6 +45,12 @@ const bootstrap = async () => {
             errMsg: err.message,
             status: err.statusCode || 500,
             stack: err.stack,
+        });
+    });
+    app.use((req, res) => {
+        res.status(404).json({
+            errMsg: "Route Not Found",
+            status: 404,
         });
     });
     const httpServer = app.listen(process.env.PORT, () => {

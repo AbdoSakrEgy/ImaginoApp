@@ -32,12 +32,12 @@ const uploadManyFiles = async ({ fileLocationArr = [], storagePathOnCloudinary =
 };
 exports.uploadManyFiles = uploadManyFiles;
 // destroySingleFile
-const destroySingleFile = async ({ public_id, }) => {
+const destroySingleFile = async ({ public_id }) => {
     await cloudinary.uploader.destroy(public_id);
 };
 exports.destroySingleFile = destroySingleFile;
 // destroyManyFiles
-const destroyManyFiles = async ({ public_ids = [], }) => {
+const destroyManyFiles = async ({ public_ids = [] }) => {
     await cloudinary.api.delete_resources(public_ids);
 };
 exports.destroyManyFiles = destroyManyFiles;

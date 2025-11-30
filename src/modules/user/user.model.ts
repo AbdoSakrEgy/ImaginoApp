@@ -58,7 +58,7 @@ const userSchema = new Schema<IUser>(
     is2FAActive: { type: Boolean, default: false },
     otp2FA: { otp: { type: String }, expiredAt: Date },
   },
-  { timestamps: true, toJSON: { virtuals: true }, toObject: { virtuals: true } }
+  { timestamps: true, toJSON: { virtuals: true }, toObject: { virtuals: true } },
 );
 // virtuals
 userSchema.virtual("fullName").get(function () {
@@ -72,36 +72,39 @@ userSchema.virtual("fullName").set(function (value) {
 // hooks
 
 // pre save
-userSchema.pre("save", async function (this: HydratedDocument<IUser> & { isFirstCreation: boolean }, next) {
-  this.isFirstCreation = this.isNew;
-  if (this.emailOtp && this.isModified("emailOtp")) {
-    this.emailOtp = {
-      otp: await hash(this.emailOtp?.otp),
-      expiredAt: this.emailOtp?.expiredAt,
-    };
-  }
-  if (this.newEmailOtp && this.isModified("newEmailOtp")) {
-    this.newEmailOtp = {
-      otp: await hash(this.newEmailOtp?.otp),
-      expiredAt: this.newEmailOtp?.expiredAt,
-    };
-  }
-  if (this.password && this.isModified("password")) {
-    this.password = await hash(this.password);
-  }
-  if (this.passwordOtp && this.isModified("passwordOtp")) {
-    this.passwordOtp = {
-      otp: await hash(this.passwordOtp?.otp),
-      expiredAt: this.passwordOtp?.expiredAt,
-    };
-  }
-  if (this.otp2FA && this.isModified("otp2FA")) {
-    this.otp2FA = {
-      otp: await hash(this.otp2FA?.otp),
-      expiredAt: this.otp2FA?.expiredAt,
-    };
-  }
-});
+userSchema.pre(
+  "save",
+  async function (this: HydratedDocument<IUser> & { isFirstCreation: boolean }, next) {
+    this.isFirstCreation = this.isNew;
+    if (this.emailOtp && this.isModified("emailOtp")) {
+      this.emailOtp = {
+        otp: await hash(this.emailOtp?.otp),
+        expiredAt: this.emailOtp?.expiredAt,
+      };
+    }
+    if (this.newEmailOtp && this.isModified("newEmailOtp")) {
+      this.newEmailOtp = {
+        otp: await hash(this.newEmailOtp?.otp),
+        expiredAt: this.newEmailOtp?.expiredAt,
+      };
+    }
+    if (this.password && this.isModified("password")) {
+      this.password = await hash(this.password);
+    }
+    if (this.passwordOtp && this.isModified("passwordOtp")) {
+      this.passwordOtp = {
+        otp: await hash(this.passwordOtp?.otp),
+        expiredAt: this.passwordOtp?.expiredAt,
+      };
+    }
+    if (this.otp2FA && this.isModified("otp2FA")) {
+      this.otp2FA = {
+        otp: await hash(this.otp2FA?.otp),
+        expiredAt: this.otp2FA?.expiredAt,
+      };
+    }
+  },
+);
 
 userSchema.pre("findOneAndUpdate", async function () {
   const update: any = this.getUpdate();

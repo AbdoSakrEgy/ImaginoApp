@@ -37,11 +37,7 @@ export const multerUpload = ({
           // },
         });
 
-  const fileFilter = (
-    req: Request,
-    file: Express.Multer.File,
-    cb: CallableFunction
-  ) => {
+  const fileFilter = (req: Request, file: Express.Multer.File, cb: CallableFunction) => {
     if (file.size > 200 * 1024 * 1024 && storeIn == StoreInEnum.memory) {
       return cb(new ApplicationException("Use disk not memory", 400), false);
     } else if (!sendedFileType.includes(file.mimetype)) {

@@ -29,8 +29,7 @@ export const sendEmail = async ({
       subject, // Subject line
       html, // html body
     });
-    const isEmailSended =
-      Array.isArray(info?.accepted) && info.accepted.length > 0;
+    const isEmailSended = Array.isArray(info?.accepted) && info.accepted.length > 0;
     return { isEmailSended, info };
   } catch (err) {
     return { isEmailSended: false, err: err + "" };
