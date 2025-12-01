@@ -12,7 +12,7 @@ export const sendEmail = async ({
   const transporter = createTransport({
     host: process.env.HOST as string,
     port: 465,
-    secure: true,
+    secure: true, // true for port 465 and false for other ports
     service: "gmail",
     auth: {
       user: process.env.SENDER_EMAIL,

@@ -15,7 +15,6 @@ class AuthServices {
     // ============================ register ============================
     register = async (req, res, next) => {
         const { firstName, lastName, email, password } = req.body;
-        console.log({ firstName, lastName, email, password });
         // step: check user existence
         const isUserExist = await user_model_1.UserModel.findOne({ email });
         if (isUserExist) {
@@ -43,18 +42,18 @@ class AuthServices {
             password,
             emailOtp: {
                 otp: otpCode,
-                expiredAt: new Date(Date.now() + 5 * 60 * 1000),
+                expiredAt: new Date(Date.now() + 5 * 60 * 1000), // expires in 5 minutes
             },
         });
         if (!user) {
             throw new Errors_1.ApplicationException("Creation failed", 500);
         }
         // step: create token
-        const accessToken = (0, jwt_1.createJwt)({ userId: user._id, userEmail: user.email }, process.env.ACCESS_SEGNATURE, {
+        const accessToken = (0, jwt_1.createJwt)({ userId: user._id, role: user.role }, process.env.ACCESS_SEGNATURE, {
             expiresIn: "1h",
             jwtid: (0, createOtp_1.createOtp)(),
         });
-        const refreshToken = (0, jwt_1.createJwt)({ userId: user._id, userEmail: user.email }, process.env.REFRESH_SEGNATURE, {
+        const refreshToken = (0, jwt_1.createJwt)({ userId: user._id, role: user.role }, process.env.REFRESH_SEGNATURE, {
             expiresIn: "7d",
             jwtid: (0, createOtp_1.createOtp)(),
         });

@@ -20,7 +20,7 @@ export const registerSchema = z
         ctx.addIssue({
           code: "custom",
           path: ["phone"],
-          message: "Phone number is incorrect",
+          message: "Phone number have to be in the format +201234567890",
         });
       }
     }

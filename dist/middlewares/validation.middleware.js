@@ -18,7 +18,7 @@ const validation = (shcema) => {
             const issues = result.error?.issues;
             let messages = "";
             for (let item of issues) {
-                messages += item.message + " ||&&|| ";
+                messages += String(item.path[0]) + " => " + item.message + "   ||&&||   ";
             }
             throw new Errors_1.ValidationError(messages, 400);
         }

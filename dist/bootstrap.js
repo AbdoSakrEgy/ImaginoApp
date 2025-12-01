@@ -18,7 +18,6 @@ const express_rate_limit_1 = require("express-rate-limit");
 var whitelist = ["http://example1.com", "http://example2.com", "http://127.0.0.1:5501", undefined];
 var corsOptions = {
     origin: function (origin, callback) {
-        console.log("Origin:", origin);
         if (whitelist.indexOf(origin) !== -1) {
             callback(null, true);
         }

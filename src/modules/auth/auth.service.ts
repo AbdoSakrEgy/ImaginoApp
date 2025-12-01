@@ -30,7 +30,6 @@ export class AuthServices implements IAuthServcies {
   // ============================ register ============================
   register = async (req: Request, res: Response, next: NextFunction): Promise<Response> => {
     const { firstName, lastName, email, password }: registerDTO = req.body;
-    console.log({ firstName, lastName, email, password });
     // step: check user existence
     const isUserExist = await UserModel.findOne({ email });
     if (isUserExist) {
@@ -58,7 +57,7 @@ export class AuthServices implements IAuthServcies {
       password,
       emailOtp: {
         otp: otpCode,
-        expiredAt: new Date(Date.now() + 5 * 60 * 1000),
+        expiredAt: new Date(Date.now() + 5 * 60 * 1000), // expires in 5 minutes
       },
     });
     if (!user) {
@@ -66,7 +65,7 @@ export class AuthServices implements IAuthServcies {
     }
     // step: create token
     const accessToken = createJwt(
-      { userId: user._id, userEmail: user.email },
+      { userId: user._id, role: user.role },
       process.env.ACCESS_SEGNATURE as string,
       {
         expiresIn: "1h",
@@ -74,7 +73,7 @@ export class AuthServices implements IAuthServcies {
       },
     );
     const refreshToken = createJwt(
-      { userId: user._id, userEmail: user.email },
+      { userId: user._id, role: user.role },
       process.env.REFRESH_SEGNATURE as string,
       {
         expiresIn: "7d",
