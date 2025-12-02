@@ -452,7 +452,6 @@ class AuthServices {
     activeDeactive2FA = async (req, res, next) => {
         const user = res.locals.user;
         const otp = req.body?.otp;
-        console.log({ otp });
         // step: check otp existence
         if (!otp) {
             const updatedUser = await user_model_1.UserModel.findOneAndUpdate({ _id: user._id }, { $set: { is2FAActive: false } }, {

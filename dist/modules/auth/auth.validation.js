@@ -13,9 +13,9 @@ exports.registerSchema = zod_1.default
     email: zod_1.default.email(),
     password: zod_1.default.string(),
     age: zod_1.default.number().min(18).max(200).optional(),
-    gender: zod_1.default.literal([user_module_types_1.Gender.MALE, user_module_types_1.Gender.FEMALE]).optional(),
+    gender: zod_1.default.literal([user_module_types_1.GenderEnum.MALE, user_module_types_1.GenderEnum.FEMALE]).optional(),
     phone: zod_1.default.string().optional(),
-    role: zod_1.default.literal([user_module_types_1.Role.USER, user_module_types_1.Role.ADMIN]).optional(),
+    role: zod_1.default.literal([user_module_types_1.RoleEnum.USER, user_module_types_1.RoleEnum.ADMIN]).optional(),
 })
     .superRefine((args, ctx) => {
     if (args.phone) {

@@ -8,10 +8,12 @@ const validation = (shcema) => {
             ...req.body,
             ...req.params,
             ...req.query,
-            // express.json() can't see or parssing fields that has files, so we create this field and put data in it manually
-            // profileImage: req.file,
-            // attachment: req.file,
-            // attachments: req.files,
+            // express.json() cannot parse multipart/form-data (file uploads),
+            // so we manually attach uploaded file(s) to the data object
+            // to allow Zod to validate them.
+            profileImage: req.file,
+            attachment: req.file,
+            attachments: req.files,
         };
         const result = shcema.safeParse(data);
         if (!result.success) {

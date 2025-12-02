@@ -13,7 +13,6 @@ const auth = async (req, res, next) => {
         authorization,
         tokenType: decodeToken_js_1.TokenTypesEnum.access,
     });
-    console.log({ user });
     // step: modify res.locals
     res.locals.user = user;
     res.locals.payload = payload;

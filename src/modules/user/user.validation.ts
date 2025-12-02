@@ -1,6 +1,6 @@
 import z from "zod";
 import mongoose from "mongoose";
-import { Gender } from "../../types/user.module.types";
+import { GenderEnum, PricingPlanEnum } from "../../types/user.module.types";
 
 export const uploadProfileImageSchema = z.object({
   profileImage: z.object(),
@@ -33,7 +33,7 @@ export const updateBasicInfoSchema = z.object({
   firstName: z.string().min(3).max(50).optional(),
   lastName: z.string().min(3).max(50).optional(),
   age: z.number().min(18).max(200).optional(),
-  gender: z.literal([Gender.MALE, Gender.FEMALE]).optional(),
+  gender: z.literal([GenderEnum.MALE, GenderEnum.FEMALE]).optional(),
   phone: z.string().optional(),
 });
 
@@ -61,4 +61,9 @@ export const blockUserSchema = z.object({
 
 export const deleteFriendRequestSchema = z.object({
   friendRequestId: z.string(),
+});
+
+export const payWithStripeSchema = z.object({
+  plan: z.enum(Object.values(PricingPlanEnum)),
+  userCoupon: z.string().optional(),
 });

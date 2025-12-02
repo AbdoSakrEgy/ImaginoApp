@@ -2,7 +2,12 @@ import mongoose, { HydratedDocument, model, Schema, Types } from "mongoose";
 import { hash } from "../../utils/bcrypt";
 import { decrypt, encrypt } from "../../utils/crypto";
 import { ApplicationException } from "../../utils/Errors";
-import { Gender, IUser, Role } from "../../types/user.module.types";
+import {
+  GenderEnum,
+  IUser,
+  PricingPlanEnum,
+  RoleEnum,
+} from "../../types/user.module.types";
 
 const userSchema = new Schema<IUser>(
   {
@@ -22,7 +27,11 @@ const userSchema = new Schema<IUser>(
       required: true,
     },
     age: { type: Number, min: 18, max: 200 },
-    gender: { type: String, enum: Object.values(Gender), default: Gender.MALE },
+    gender: {
+      type: String,
+      enum: Object.values(GenderEnum),
+      default: GenderEnum.MALE,
+    },
     phone: {
       type: String,
       trim: true,
@@ -33,7 +42,11 @@ const userSchema = new Schema<IUser>(
       set: (value: string) => (value ? encrypt(value) : undefined),
       get: (value: string) => (value ? decrypt(value) : undefined),
     },
-    role: { type: String, enum: Object.values(Role), default: Role.USER },
+    role: {
+      type: String,
+      enum: Object.values(RoleEnum),
+      default: RoleEnum.USER,
+    },
     // auth and OTP
     email: { type: String, required: true, unique: true },
     emailOtp: { otp: { type: String }, expiredAt: Date },
@@ -45,10 +58,24 @@ const userSchema = new Schema<IUser>(
     credentialsChangedAt: Date,
     isActive: { type: Boolean, default: true },
     deletedBy: { type: mongoose.Schema.Types.ObjectId, ref: "user" },
-    // others
-    profileImage: { type: String },
     is2FAActive: { type: Boolean, default: false },
     otp2FA: { otp: { type: String }, expiredAt: Date },
+    // others
+    profileImage: {
+      public_id: { type: String },
+      secure_url: { type: String },
+    },
+    // payment
+    checkoutSessionId: { type: String },
+    paymentIntentId: { type: String },
+    refundId: { type: String },
+    refundedAt: { type: Date },
+    pricingPlan: {
+      type: String,
+      enum: Object.values(PricingPlanEnum),
+      default: PricingPlanEnum.FREE,
+    },
+    avaliableCredits: { type: Number, default: 50 },
   },
   { timestamps: true, toJSON: { virtuals: true }, toObject: { virtuals: true } }
 );
@@ -62,7 +89,6 @@ userSchema.virtual("fullName").set(function (value) {
 });
 
 // hooks
-
 // pre save
 userSchema.pre(
   "save",
