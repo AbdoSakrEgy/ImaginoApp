@@ -3,9 +3,20 @@ import { IGallery, GalleryStatus, IGalleryDocument } from "../../types/gallery.m
 
 const gallerySchema = new Schema<IGallery>(
     {
-        title: { type: String, required: true, trim: true, maxlength: 100 },
-        description: { type: String, trim: true, maxlength: 500 },
-        tags: { type: [String], default: [] },
+        title: {
+            type: String,
+            required: true, trim: true,
+            maxlength: 100
+        },
+        description: {
+            type: String,
+            trim: true,
+            maxlength: 500
+        },
+        tags: {
+            type: [String],
+            default: ["avatar"]
+        },
 
         images: [
             {
@@ -27,6 +38,7 @@ const gallerySchema = new Schema<IGallery>(
             enum: ["public", "private"],
             default: "private"
         },
+        
         deletedBy: {
             type: Schema.Types.ObjectId,
             ref: "user",
@@ -35,16 +47,18 @@ const gallerySchema = new Schema<IGallery>(
     },
     {
         timestamps: true,
+        toJSON: { virtuals: true },
+        toObject: { virtuals: true },
 
     }
 );
 
-gallerySchema.pre(
-    "save",
-    async function (this: HydratedDocument<IGalleryDocument>): Promise<void> {
-        this.isFirstCreation = this.isNew;
-    }
-);
+// gallerySchema.pre(
+//     "save",
+//     async function (this: HydratedDocument<IGalleryDocument>): Promise<void> {
+//         this.isFirstCreation = this.isNew;
+//     }
+// );
 
 
 gallerySchema.virtual("imageCount").get(function () {

@@ -3,9 +3,20 @@ Object.defineProperty(exports, "__esModule", { value: true });
 exports.GalleryModel = void 0;
 const mongoose_1 = require("mongoose");
 const gallerySchema = new mongoose_1.Schema({
-    title: { type: String, required: true, trim: true, maxlength: 100 },
-    description: { type: String, trim: true, maxlength: 500 },
-    tags: { type: [String], default: [] },
+    title: {
+        type: String,
+        required: true, trim: true,
+        maxlength: 100
+    },
+    description: {
+        type: String,
+        trim: true,
+        maxlength: 500
+    },
+    tags: {
+        type: [String],
+        default: ["avatar"]
+    },
     images: [
         {
             secure_url: { type: String, required: true },
@@ -32,10 +43,15 @@ const gallerySchema = new mongoose_1.Schema({
     },
 }, {
     timestamps: true,
+    toJSON: { virtuals: true },
+    toObject: { virtuals: true },
 });
-gallerySchema.pre("save", async function () {
-    this.isFirstCreation = this.isNew;
-});
+// gallerySchema.pre(
+//     "save",
+//     async function (this: HydratedDocument<IGalleryDocument>): Promise<void> {
+//         this.isFirstCreation = this.isNew;
+//     }
+// );
 gallerySchema.virtual("imageCount").get(function () {
     return this.images.length;
 });

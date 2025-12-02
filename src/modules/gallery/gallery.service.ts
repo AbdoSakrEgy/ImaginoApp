@@ -8,8 +8,6 @@ import {
 } from "../../utils/multer/cloudinary.services";
 import { successHandler } from "../../utils/successHandler";
 import { ApplicationException } from "../../utils/Errors";
-import { title } from "process";
-import { log } from "console";
 
 export class GalleryServices implements IGalleryServices {
     constructor() { }
