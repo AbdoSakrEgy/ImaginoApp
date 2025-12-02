@@ -6,11 +6,11 @@ Object.defineProperty(exports, "__esModule", { value: true });
 exports.connectDB = void 0;
 const mongoose_1 = __importDefault(require("mongoose"));
 const connectDB = async () => {
-    if (!process.env.MONGODB_COMPASS_URI) {
+    if (!process.env.MONGODB_ATLAS_URL) {
         throw new Error("MONGODB_COMPASS_URI is missing!");
     }
     await mongoose_1.default
-        .connect(process.env.MONGODB_COMPASS_URI)
+        .connect(process.env.MONGODB_ATLAS_URL)
         .then(() => {
         console.log("DB connected successfully");
     })
