@@ -1,3 +1,4 @@
+import {Request,Response, NextFunction } from "express";
 import { Document, Types } from "mongoose";
 
 export interface IAIEdit {
@@ -7,7 +8,7 @@ export interface IAIEdit {
     | "colorize"
     | "upscale"
     | "inpaint"
-    | "outpaint"
+    | "outpaint" 
     | "style-transfer"
     | "object-removal"
     | "text-to-image"
@@ -33,8 +34,8 @@ export interface IImage extends Document {
 
   // Storage
   url: string;
-  thumbnailUrl?: string;
   storageKey: string;
+  thumbnailUrl?: string;
 
   // Metadata
   filename: string;
@@ -75,6 +76,15 @@ export interface IImage extends Document {
   updatedAt: Date;
 
   // Methods
-  getRootImage(): Promise<IImage | null>;
-  getAllVersions(): Promise<IImage[]>;
+  
+  // getRootImage(): Promise<IImage | null>;
+  // getAllVersions(): Promise<IImage[]>;
+}
+
+export interface IImageServices {
+  getAllImages(
+    req: Request,
+    res: Response,
+    next: NextFunction
+  ): Promise<Response>;
 }
