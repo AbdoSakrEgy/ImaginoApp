@@ -17,20 +17,7 @@ import path from "path/win32";
 export class ImageServices implements IImageServices {
   private imageModel = ImageModel;
 
-  constructor() {}
-  // ============================ gitImage ============================
-  gitImage = async (req: Request, res: Response, next: NextFunction): Promise<Response> => {
-    return successHandler({ res });
-  };
-
-  // ============================ genImgWithoutBackground ============================
-  genImgWithoutBackground = async (
-    req: Request,
-    res: Response,
-    next: NextFunction,
-  ): Promise<Response> => {
-    return successHandler({ res });
-  };
+  constructor() { }
 
   // ============================ genSutiableBackgrounds ============================
   genSutiableBackgrounds = async (
@@ -453,6 +440,14 @@ export class ImageServices implements IImageServices {
     });
   };
 
+  // ============================ gitImage ============================
+  gitImage = async (req: Request, res: Response, next: NextFunction): Promise<Response> => {
+    const user = res.locals.user
+    const {imageId}=req.params
+    const image =await this.imageModel.findById(imageId)
+    return successHandler({ res,result:{image} });
+  };
+
   // ============================ getAllImages ============================
   getAllImages = async (req: Request, res: Response, next: NextFunction): Promise<Response> => {
     const { isPublic, category, tags, page = 1, size = 20 } = req.query;
@@ -580,8 +575,8 @@ export class ImageServices implements IImageServices {
     });
   };
 
-  // ============================ uploadImageWithoutBackground ============================
-  uploadImageWithoutBackground = async (
+  // ============================ genImgWithoutBackground ============================
+  genImgWithoutBackground = async (
     req: Request,
     res: Response,
     next: NextFunction,

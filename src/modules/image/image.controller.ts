@@ -5,7 +5,7 @@ import { multerUpload } from "../../utils/multer/multer.upload";
 const router = Router();
 const imageServices = new ImageServices();
 
-router.get("/git-image", auth, imageServices.gitImage);
+router.get("/git-image/:imageId", auth, imageServices.gitImage);
 router.post("/gen-sutiable-backgrounds", auth, imageServices.genSutiableBackgrounds);
 router.post("/gen-img-with-selected-background", auth, imageServices.genImgWithSelectedBackground);
 router.post("/gen-img-with-new-background", auth, imageServices.genImgWithNewBackground);
@@ -41,7 +41,7 @@ router.post(
 
   auth,
   upload.single("imageFile"),
-  imageServices.uploadImageWithoutBackground,
+  imageServices.genImgWithoutBackground,
 );
 
 export default router;

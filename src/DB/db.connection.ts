@@ -1,11 +1,11 @@
 import mongoose from "mongoose";
 
 export const connectDB = async () => {
-  if (!process.env.MONGODB_COMPASS_URI) {
-    throw new Error("MONGODB_COMPASS_URI is missing!");
+  if (!process.env.MONGODB_ATLAS_URL) {
+    throw new Error("MONGODB_ATLAS_URL is missing!");
   }
   await mongoose
-    .connect(process.env.MONGODB_COMPASS_URI)
+    .connect(process.env.MONGODB_ATLAS_URL)
     .then(() => {
       console.log("DB connected successfully");
     })
