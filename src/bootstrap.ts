@@ -1,18 +1,17 @@
-
-// bootstrap.ts
+// src/index.ts
 import express, { NextFunction, Request, Response } from "express";
-import path from "path";
 import dotenv from "dotenv";
+import cors from "cors";
+import { rateLimit } from "express-rate-limit";
 
-dotenv.config({
-  path: path.resolve("./src/config/.env"),
-});
+// Load env variables from .env.local (Vercel uses this in production)
+dotenv.config();
 
 import router from "./routes";
 import { connectDB } from "./DB/db.connection";
 import { ApplicationException, IError } from "./utils/Errors";
-import cors from "cors";
-import { rateLimit } from "express-rate-limit";
+
+const app = express();
 
 const whitelist = ["http://example1.com", "http://example2.com", "http://127.0.0.1:5501", undefined];
 const corsOptions = {
@@ -33,38 +32,44 @@ const limiter = rateLimit({
   ipv6Subnet: 56,
 });
 
-let app: express.Application;
+// Middleware
+app.use(cors(corsOptions));
+app.use(limiter);
+app.use(express.json());
 
-export const bootstrap = async () => {
-  await connectDB();
-  
-  app = express();
-  app.use(cors(corsOptions));
-  app.use(limiter);
-  app.use(express.json());
-  app.use("/api/v1", router);
+// Routes
+app.use("/api/v1", router);
 
-  app.use((err: IError, req: Request, res: Response, next: NextFunction) => {
-    res.status(err.statusCode || 500).json({
-      errMsg: err.message,
-      status: err.statusCode || 500,
-      stack: err.stack,
+// Error handling middleware
+app.use((err: IError, req: Request, res: Response, next: NextFunction) => {
+  console.error("Error:", err);
+  res.status(err.statusCode || 500).json({
+    errMsg: err.message,
+    status: err.statusCode || 500,
+    stack: process.env.NODE_ENV === "production" ? undefined : err.stack,
+  });
+});
+
+// 404 handler
+app.use((req: Request, res: Response) => {
+  res.status(404).json({
+    errMsg: "Route Not Found",
+    status: 404,
+  });
+});
+
+// Initialize database and start server for local development
+if (process.env.NODE_ENV !== "serverless") {
+  connectDB().then(() => {
+    const PORT = process.env.PORT || 3000;
+    app.listen(PORT, () => {
+      console.log(`Backend server is running on port ${PORT}`);
+      console.log("=========================================");
     });
+  }).catch((err) => {
+    console.error("Database connection failed:", err);
+    process.exit(1);
   });
+}
 
-  app.use((req: Request, res: Response) => {
-    res.status(404).json({
-      errMsg: "Route Not Found",
-      status: 404,
-    });
-  });
-
-  const httpServer = app.listen(process.env.PORT || 3000, () => {
-    console.log("Backend server is running on port", process.env.PORT);
-    console.log("=========================================");
-  });
-
-  return httpServer;
-};
-
-export const getApp = () => app;
+export default app;
