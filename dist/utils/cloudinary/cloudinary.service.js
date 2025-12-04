@@ -12,7 +12,7 @@ cloudinary.config({
 // uploadSingleFile
 const uploadSingleFile = async ({ fileLocation, storagePathOnCloudinary = "ImaginoApp", }) => {
     const { public_id, secure_url } = await cloudinary.uploader.upload(fileLocation, {
-        folder: `${process.env.APP_NAME}/${storagePathOnCloudinary}`,
+        folder: `${storagePathOnCloudinary}`,
     });
     //* If you used returned secure_url will not work, you have to modify it to be sutiable for browsers
     return { public_id, secure_url };

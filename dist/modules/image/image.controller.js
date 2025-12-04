@@ -1,9 +1,14 @@
 "use strict";
 Object.defineProperty(exports, "__esModule", { value: true });
+const multer_upload_1 = require("./../../utils/multer/multer.upload");
 const auth_middleware_1 = require("./../../middlewares/auth.middleware");
 const express_1 = require("express");
 const image_service_1 = require("./image.service");
+const multer_upload_2 = require("../../utils/multer/multer.upload");
 const router = (0, express_1.Router)();
 const imageServices = new image_service_1.ImageServices();
+const upload = (0, multer_upload_2.multerUpload)({ sendedFileDest: "tmp", storeIn: multer_upload_1.StoreInEnum.disk });
 router.get("/getall", auth_middleware_1.auth, imageServices.getAllImages);
+router.delete("/delete/:imageId", auth_middleware_1.auth, imageServices.deleteImage);
+router.post("/gen-img-without-background", auth_middleware_1.auth, upload.single("imageFile"), imageServices.uploadImageWithoutBackground);
 exports.default = router;

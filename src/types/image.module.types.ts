@@ -1,19 +1,19 @@
-import {Request,Response, NextFunction } from "express";
+import { Request, Response, NextFunction } from "express";
 import { Document, Types } from "mongoose";
 
 export interface IAIEdit {
   operation:
-    | "remove-background"
-    | "enhance"
-    | "colorize"
-    | "upscale"
-    | "inpaint"
-    | "outpaint" 
-    | "style-transfer"
-    | "object-removal"
-    | "text-to-image"
-    | "image-to-image"
-    | "custom";
+  | "remove-background"
+  | "enhance"
+  | "colorize"
+  | "upscale"
+  | "inpaint"
+  | "outpaint"
+  | "style-transfer"
+  | "object-removal"
+  | "text-to-image"
+  | "image-to-image"
+  | "custom";
   provider: "openai" | "stability-ai" | "midjourney" | "replicate" | "custom";
   prompt?: string;
   parameters?: Record<string, any>;
@@ -76,13 +76,18 @@ export interface IImage extends Document {
   updatedAt: Date;
 
   // Methods
-  
+
   // getRootImage(): Promise<IImage | null>;
   // getAllVersions(): Promise<IImage[]>;
 }
 
 export interface IImageServices {
   getAllImages(
+    req: Request,
+    res: Response,
+    next: NextFunction
+  ): Promise<Response>;
+  deleteImage(
     req: Request,
     res: Response,
     next: NextFunction
