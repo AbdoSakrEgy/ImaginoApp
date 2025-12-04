@@ -1,10 +1,8 @@
-// src/index.ts
 import express, { NextFunction, Request, Response } from "express";
 import dotenv from "dotenv";
 import cors from "cors";
 import { rateLimit } from "express-rate-limit";
 
-// Load env variables from .env.local (Vercel uses this in production)
 dotenv.config();
 
 import router from "./routes";
@@ -37,6 +35,21 @@ app.use(cors(corsOptions));
 app.use(limiter);
 app.use(express.json());
 
+// Connect to DB once on startup
+let dbConnected = false;
+app.use(async (req: Request, res: Response, next: NextFunction) => {
+  if (!dbConnected) {
+    try {
+      await connectDB();
+      dbConnected = true;
+    } catch (err) {
+      console.error("Database connection failed:", err);
+      return res.status(500).json({ error: "Database connection failed" });
+    }
+  }
+  next();
+});
+
 // Routes
 app.use("/api/v1", router);
 
@@ -58,8 +71,8 @@ app.use((req: Request, res: Response) => {
   });
 });
 
-// Initialize database and start server for local development
-if (process.env.NODE_ENV !== "serverless") {
+// Local development only
+if (process.env.NODE_ENV !== "serverless" && !process.env.VERCEL) {
   connectDB().then(() => {
     const PORT = process.env.PORT || 3000;
     app.listen(PORT, () => {
