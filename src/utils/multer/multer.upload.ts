@@ -15,7 +15,7 @@ export const fileTypes = {
 export const multerUpload = ({
   sendedFileDest = "general",
   sendedFileType = fileTypes.image,
-  storeIn = StoreInEnum.memory,
+  storeIn = StoreInEnum.disk,
 }: {
   sendedFileDest?: string;
   sendedFileType?: string[];

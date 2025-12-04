@@ -1,3 +1,4 @@
+import { NextFunction, Request, Response } from "express";
 import { Document, Types } from "mongoose";
 
 export interface IAIEdit {
@@ -25,7 +26,7 @@ export interface IImage extends Document {
   // References
   user: Types.ObjectId;
   parentId?: Types.ObjectId | null;
-  children: Types.ObjectId[];
+  children?: Types.ObjectId[];
 
   // Version control
   isOriginal: boolean;
@@ -77,4 +78,12 @@ export interface IImage extends Document {
   // Methods
   getRootImage(): Promise<IImage | null>;
   getAllVersions(): Promise<IImage[]>;
+}
+
+export interface IImageServices {
+  deleteImage(
+    req: Request,
+    res: Response,
+    next: NextFunction
+  ): Promise<Response>;
 }

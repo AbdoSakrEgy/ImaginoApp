@@ -64,8 +64,8 @@ const imageSchema = new Schema<IImage>(
       required: true,
     }, // bytes
     dimensions: {
-      width: { type: Number, required: true },
-      height: { type: Number, required: true },
+      width: { type: Number },
+      height: { type: Number },
     },
 
     // AI editing information

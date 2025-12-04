@@ -93,8 +93,8 @@ const imageSchema = new mongoose_1.Schema({
         required: true,
     }, // bytes
     dimensions: {
-        width: { type: Number, required: true },
-        height: { type: Number, required: true },
+        width: { type: Number },
+        height: { type: Number },
     },
     // AI editing information
     aiEdits: [

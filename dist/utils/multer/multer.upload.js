@@ -15,7 +15,7 @@ exports.fileTypes = {
     image: ["image/jpg", "image/jpeg", "image/png", "image/gif", "image/webp"],
     video: ["video/mp4", "video/webm"],
 };
-const multerUpload = ({ sendedFileDest = "general", sendedFileType = exports.fileTypes.image, storeIn = StoreInEnum.memory, }) => {
+const multerUpload = ({ sendedFileDest = "general", sendedFileType = exports.fileTypes.image, storeIn = StoreInEnum.disk, }) => {
     const storage = storeIn == StoreInEnum.memory
         ? multer_1.default.memoryStorage()
         : multer_1.default.diskStorage({
