@@ -2,11 +2,13 @@ import multer from "multer";
 import { ApplicationException } from "../Errors";
 import { Request } from "express";
 import fs from "fs";
+import path from "path";
 
 export enum StoreInEnum {
   disk = "disk",
   memory = "memory",
 }
+
 export const fileTypes = {
   image: ["image/jpg", "image/jpeg", "image/png", "image/gif", "image/webp"],
   video: ["video/mp4", "video/webm"],
@@ -22,19 +24,23 @@ export const multerUpload = ({
   storeIn?: StoreInEnum;
 }): multer.Multer => {
   const storage =
-    storeIn == StoreInEnum.memory
+    storeIn === StoreInEnum.memory
       ? multer.memoryStorage()
       : multer.diskStorage({
-          // destination: (req: any, file, cb) => {
-          //   const fullDest = `uploads/${sendedFileDest}/${req.user._id}`;
-          //   if (!fs.existsSync(fullDest)) {
-          //     fs.mkdirSync(fullDest, { recursive: true });
-          //   }
-          //   cb(null, fullDest);
-          // },
-          // filename: (req: any, file, cb) => {
-          //   cb(null, `${file.originalname}`);
-          // },
+          destination: (req: any, file, cb) => {
+            const userId = req.user?._id?.toString() || "anonymous";
+            const fullDest = path.join("uploads", sendedFileDest, userId);
+            if (!fs.existsSync(fullDest)) {
+              fs.mkdirSync(fullDest, { recursive: true });
+            }
+            cb(null, fullDest);
+          },
+          filename: (req: any, file, cb) => {
+            const timestamp = Date.now();
+            const ext = path.extname(file.originalname);
+            const name = path.basename(file.originalname, ext);
+            cb(null, `${name}-${timestamp}${ext}`);
+          },
         });
 
   const fileFilter = (req: Request, file: Express.Multer.File, cb: CallableFunction) => {
@@ -45,5 +51,6 @@ export const multerUpload = ({
     }
     cb(null, true);
   };
+
   return multer({ storage, fileFilter });
 };

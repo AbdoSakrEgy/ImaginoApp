@@ -4,30 +4,22 @@ import { successHandler } from "../../utils/successHandler";
 import { NextFunction, Request, Response } from "express";
 import { ApplicationException } from "../../utils/Errors";
 import { IImageServices } from "../../types/image.module.types";
-import { uploadSingleFile } from "../../utils/cloudinary/cloudinary.service";
 import { genImgWithNewDimensionFn } from "../../utils/GenAI/gen.img.with.new.dimension";
 import * as fs from "fs";
 import { genInhancedQualityImgFn } from "../../utils/GenAI/gen.inhanced.quality.img";
 import { genMergeLogoToImgFn } from "../../utils/GenAI/gen-merge-logo-to-img";
+import { paginationFunction } from "../../utils/pagination";
+import { destroySingleFile, uploadSingleFile } from "../../utils/cloudinary/cloudinary.service";
+import mongoose from "mongoose";
+import { removeBackgroundFromImageBase64 } from "../../utils/ai/removeBackground";
+import path from "path/win32";
+
 export class ImageServices implements IImageServices {
   private imageModel = ImageModel;
 
   constructor() {}
   // ============================ gitImage ============================
-  gitImage = async (
-    req: Request,
-    res: Response,
-    next: NextFunction
-  ): Promise<Response> => {
-    return successHandler({ res });
-  };
-
-  // ============================ deleteImage ============================
-  deleteImage = async (
-    req: Request,
-    res: Response,
-    next: NextFunction
-  ): Promise<Response> => {
+  gitImage = async (req: Request, res: Response, next: NextFunction): Promise<Response> => {
     return successHandler({ res });
   };
 
@@ -35,7 +27,7 @@ export class ImageServices implements IImageServices {
   genImgWithoutBackground = async (
     req: Request,
     res: Response,
-    next: NextFunction
+    next: NextFunction,
   ): Promise<Response> => {
     return successHandler({ res });
   };
@@ -44,7 +36,7 @@ export class ImageServices implements IImageServices {
   genSutiableBackgrounds = async (
     req: Request,
     res: Response,
-    next: NextFunction
+    next: NextFunction,
   ): Promise<Response> => {
     return successHandler({ res });
   };
@@ -53,7 +45,7 @@ export class ImageServices implements IImageServices {
   genImgWithSelectedBackground = async (
     req: Request,
     res: Response,
-    next: NextFunction
+    next: NextFunction,
   ): Promise<Response> => {
     return successHandler({ res });
   };
@@ -62,17 +54,13 @@ export class ImageServices implements IImageServices {
   genImgWithNewBackground = async (
     req: Request,
     res: Response,
-    next: NextFunction
+    next: NextFunction,
   ): Promise<Response> => {
     return successHandler({ res });
   };
 
   // ============================ genResizeImg ============================
-  genResizeImg = async (
-    req: Request,
-    res: Response,
-    next: NextFunction
-  ): Promise<Response> => {
+  genResizeImg = async (req: Request, res: Response, next: NextFunction): Promise<Response> => {
     return successHandler({ res });
   };
 
@@ -80,7 +68,7 @@ export class ImageServices implements IImageServices {
   genImgWithNewDimension = async (
     req: Request,
     res: Response,
-    next: NextFunction
+    next: NextFunction,
   ): Promise<Response> => {
     const user = res.locals.user;
     const file = req.file;
@@ -127,11 +115,10 @@ export class ImageServices implements IImageServices {
         fs.writeFileSync(tempImagePath, imageBuffer);
 
         // sotre in cloudinary
-        const { public_id: newPublicId, secure_url: newSecureUrl } =
-          await uploadSingleFile({
-            fileLocation: tempImagePath,
-            storagePathOnCloudinary: `ImaginoApp/genImgWithNewDimension/${user._id}/${newImage.viewType}`,
-          });
+        const { public_id: newPublicId, secure_url: newSecureUrl } = await uploadSingleFile({
+          fileLocation: tempImagePath,
+          storagePathOnCloudinary: `ImaginoApp/genImgWithNewDimension/${user._id}/${newImage.viewType}`,
+        });
 
         // store in db
         const childImage = await this.imageModel.create({
@@ -198,7 +185,7 @@ export class ImageServices implements IImageServices {
   genInhancedQualityImg = async (
     req: Request,
     res: Response,
-    next: NextFunction
+    next: NextFunction,
   ): Promise<Response> => {
     const user = res.locals.user;
     const file = req.file;
@@ -246,11 +233,10 @@ export class ImageServices implements IImageServices {
     fs.writeFileSync(tempEnhancedPath, enhancedImageBuffer);
 
     // step: Store ENHANCED image in Cloudinary
-    const { public_id: newPublicId, secure_url: newSecureUrl } =
-      await uploadSingleFile({
-        fileLocation: tempEnhancedPath,
-        storagePathOnCloudinary: `ImaginoApp/genInhancedQuality/${user._id}/enhanced`,
-      });
+    const { public_id: newPublicId, secure_url: newSecureUrl } = await uploadSingleFile({
+      fileLocation: tempEnhancedPath,
+      storagePathOnCloudinary: `ImaginoApp/genInhancedQuality/${user._id}/enhanced`,
+    });
 
     // step: Store ENHANCED image in DB (as child of original)
     const enhancedImage = await this.imageModel.create({
@@ -312,17 +298,14 @@ export class ImageServices implements IImageServices {
   genMergeLogoToImg = async (
     req: Request,
     res: Response,
-    next: NextFunction
+    next: NextFunction,
   ): Promise<Response> => {
     const user = res.locals.user;
     const files = req.files as Express.Multer.File[];
 
     // step: check file existence and validate we have exactly 2 images
     if (!files || !Array.isArray(files) || files.length !== 2) {
-      throw new ApplicationException(
-        "Exactly 2 images are required (base image and logo)",
-        400
-      );
+      throw new ApplicationException("Exactly 2 images are required (base image and logo)", 400);
     }
 
     // After validation, we know files has exactly 2 elements
@@ -331,11 +314,10 @@ export class ImageServices implements IImageServices {
 
     // step: Store BOTH ORIGINAL images in Cloudinary and DB
     // Store base image
-    const { public_id: basePublicId, secure_url: baseSecureUrl } =
-      await uploadSingleFile({
-        fileLocation: baseImageFile.path,
-        storagePathOnCloudinary: `ImaginoApp/genMergeLogoToImg/${user._id}/base`,
-      });
+    const { public_id: basePublicId, secure_url: baseSecureUrl } = await uploadSingleFile({
+      fileLocation: baseImageFile.path,
+      storagePathOnCloudinary: `ImaginoApp/genMergeLogoToImg/${user._id}/base`,
+    });
 
     const baseImage = await this.imageModel.create({
       user: user._id,
@@ -360,11 +342,10 @@ export class ImageServices implements IImageServices {
     });
 
     // Store logo image
-    const { public_id: logoPublicId, secure_url: logoSecureUrl } =
-      await uploadSingleFile({
-        fileLocation: logoImageFile.path,
-        storagePathOnCloudinary: `ImaginoApp/genMergeLogoToImg/${user._id}/logo`,
-      });
+    const { public_id: logoPublicId, secure_url: logoSecureUrl } = await uploadSingleFile({
+      fileLocation: logoImageFile.path,
+      storagePathOnCloudinary: `ImaginoApp/genMergeLogoToImg/${user._id}/logo`,
+    });
 
     const logoImage = await this.imageModel.create({
       user: user._id,
@@ -390,16 +371,12 @@ export class ImageServices implements IImageServices {
 
     // step: Use AI/Sharp to merge logo to image
     // This function returns a Buffer of the processed image
-    const mergedImageBuffer = await genMergeLogoToImgFn(
-      baseImageFile.path,
-      logoImageFile.path,
-      {
-        position: "bottom-right",
-        opacity: 80,
-        logoScale: 0.15,
-        padding: 20,
-      }
-    );
+    const mergedImageBuffer = await genMergeLogoToImgFn(baseImageFile.path, logoImageFile.path, {
+      position: "bottom-right",
+      opacity: 80,
+      logoScale: 0.15,
+      padding: 20,
+    });
 
     // step: Create a temporary path for the merged image to upload it
     const mergedFilename = `merged-${Date.now()}-${baseImageFile.filename}`;
@@ -407,11 +384,10 @@ export class ImageServices implements IImageServices {
     fs.writeFileSync(tempMergedPath, mergedImageBuffer);
 
     // step: Store MERGED image in Cloudinary
-    const { public_id: mergedPublicId, secure_url: mergedSecureUrl } =
-      await uploadSingleFile({
-        fileLocation: tempMergedPath,
-        storagePathOnCloudinary: `ImaginoApp/genMergeLogoToImg/${user._id}/merged`,
-      });
+    const { public_id: mergedPublicId, secure_url: mergedSecureUrl } = await uploadSingleFile({
+      fileLocation: tempMergedPath,
+      storagePathOnCloudinary: `ImaginoApp/genMergeLogoToImg/${user._id}/merged`,
+    });
 
     // step: Store MERGED image in DB (as child of base image)
     const mergedImage = await this.imageModel.create({
@@ -473,6 +449,200 @@ export class ImageServices implements IImageServices {
         logoImage,
         mergedImage,
         message: "Images merged successfully",
+      },
+    });
+  };
+
+  // ============================ getAllImages ============================
+  getAllImages = async (req: Request, res: Response, next: NextFunction): Promise<Response> => {
+    const { isPublic, category, tags, page = 1, size = 20 } = req.query;
+
+    const userId = res.locals.user?._id?.toString();
+    if (!userId) {
+      throw new ApplicationException("User not authenticated", 401);
+    }
+
+    const query: any = { deletedAt: null, user: userId };
+
+    if (typeof isPublic !== "undefined") {
+      query.isPublic = isPublic === "true";
+    }
+
+    if (category) {
+      query.category = category;
+    }
+
+    if (tags) {
+      query.tags = { $all: (tags as string).split(",") };
+    }
+
+    const { limit, skip } = paginationFunction({
+      page: Number(page),
+      size: Number(size),
+    });
+
+    const [images, totalCount] = await Promise.all([
+      ImageModel.find(query)
+        .sort({ createdAt: -1 })
+        .skip(skip)
+        .limit(limit)
+        .select(
+          "user url thumbnailUrl storageKey filename mimeType size dimensions tags title description category isPublic views downloads createdAt updatedAt",
+        ),
+      ImageModel.countDocuments(query),
+    ]);
+    console.log("IMAGES RESULT => ", images);
+
+    if (!images.length) {
+      return successHandler({
+        res,
+        message: "No images found",
+        result: {
+          images: [],
+          totalCount: 0,
+          page: Number(page),
+          size: Number(size),
+        },
+      });
+    }
+
+    const formattedImages = images.map((img) => ({
+      _id: img._id,
+      user: img.user,
+      url: img.url,
+      thumbnailUrl: img.thumbnailUrl,
+      storageKey: img.storageKey,
+      filename: img.filename,
+      mimeType: img.mimeType,
+      size: img.size,
+      dimensions: img.dimensions,
+      tags: img.tags,
+      title: img.title,
+      description: img.description,
+      category: img.category,
+      isPublic: img.isPublic,
+      views: img.views,
+      downloads: img.downloads,
+      createdAt: img.createdAt,
+      updatedAt: img.updatedAt,
+    }));
+
+    return successHandler({
+      res,
+      message: "Images fetched successfully",
+      result: {
+        images: formattedImages,
+        totalCount,
+        page: Number(page),
+        size: Number(size),
+      },
+    });
+  };
+
+  // ============================ deleteImage ============================
+  deleteImage = async (req: Request, res: Response, next: NextFunction): Promise<Response> => {
+    const imageId = req.params.imageId;
+    const userId = res.locals.user?._id?.toString();
+
+    if (!imageId || !mongoose.Types.ObjectId.isValid(imageId)) {
+      throw new ApplicationException("Invalid image ID", 400);
+    }
+
+    if (!userId || !mongoose.Types.ObjectId.isValid(userId)) {
+      throw new ApplicationException("User not authenticated", 401);
+    }
+
+    const imageExist: any = {
+      _id: new mongoose.Types.ObjectId(imageId),
+      user: new mongoose.Types.ObjectId(userId),
+      deletedAt: null,
+    };
+
+    const image = await ImageModel.findOne(imageExist);
+
+    if (!image) {
+      throw new ApplicationException("Image not found or already deleted", 404);
+    }
+
+    await destroySingleFile({ public_id: image.storageKey });
+
+    image.status = "deleted";
+    image.deletedAt = new Date();
+    await image.save();
+
+    return successHandler({
+      res,
+      message: "Image deleted successfully",
+      result: {
+        _id: image._id,
+        deletedAt: image.deletedAt,
+      },
+    });
+  };
+
+  // ============================ uploadImageWithoutBackground ============================
+  uploadImageWithoutBackground = async (
+    req: Request,
+    res: Response,
+    next: NextFunction,
+  ): Promise<Response> => {
+    const userId = res.locals.user?._id?.toString();
+    if (!userId) throw new ApplicationException("User not authenticated", 401);
+    if (!req.file) throw new ApplicationException("No image uploaded", 400);
+
+    const tmpFolder = path.join(__dirname, "../../tmp");
+    if (!fs.existsSync(tmpFolder)) fs.mkdirSync(tmpFolder, { recursive: true });
+
+    const fileBuffer = fs.readFileSync(req.file.path);
+    const base64Image = fileBuffer.toString("base64");
+
+    const resultBase64 = await removeBackgroundFromImageBase64({
+      imageBase64: base64Image,
+    });
+
+    const tmpFilePath = path.join(tmpFolder, `no-bg-${Date.now()}.png`);
+    fs.writeFileSync(tmpFilePath, Buffer.from(resultBase64, "base64"));
+
+    const projectFolder = process.env.PROJECT_FOLDER || "DefaultProjectFolder";
+
+    const { public_id, secure_url } = await uploadSingleFile({
+      fileLocation: tmpFilePath,
+      storagePathOnCloudinary: `${projectFolder}/${userId}/no-bg`,
+    });
+    console.log(public_id);
+
+    const newImage = await ImageModel.create({
+      user: new mongoose.Types.ObjectId(userId),
+      url: secure_url,
+      storageKey: public_id,
+      filename: req.file.originalname,
+      mimeType: req.file.mimetype,
+      size: req.file.size,
+      dimensions: { width: 0, height: 0 },
+      status: "completed",
+      isPublic: false,
+      aiEdits: [
+        {
+          operation: "remove-background",
+          provider: "custom",
+          timestamp: new Date(),
+          processingTime: 0,
+          cost: 0,
+        },
+      ],
+    });
+
+    fs.unlinkSync(req.file.path);
+    fs.unlinkSync(tmpFilePath);
+
+    return successHandler({
+      res,
+      message: "Image uploaded and background removed successfully",
+      result: {
+        _id: newImage._id,
+        url: newImage.url,
+        storageKey: newImage.storageKey,
+        aiEdits: newImage.aiEdits,
       },
     });
   };
