@@ -20,7 +20,7 @@ export const registerSchema = z
         ctx.addIssue({
           code: "custom",
           path: ["phone"],
-          message: "Phone number is incorrect",
+          message: "Phone number have to be in the format +201234567890",
         });
       }
     }
@@ -29,8 +29,7 @@ export const registerSchema = z
         ctx.addIssue({
           code: "custom",
           path: ["email"],
-          message:
-            "zzzzz@gmail.com not valid email to use :), test custom validation",
+          message: "zzzzz@gmail.com not valid email to use :), test custom validation",
         });
       }
     }

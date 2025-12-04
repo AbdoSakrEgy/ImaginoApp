@@ -47,7 +47,12 @@ const bootstrap = async () => {
       stack: err.stack,
     });
   });
-
+  app.use((req: Request, res: Response) => {
+    res.status(404).json({
+      errMsg: "Route Not Found",
+      status: 404,
+    });
+  });
   const httpServer = app.listen(process.env.PORT, () => {
     console.log("Backend server is running on port", process.env.PORT);
     console.log("=========================================");

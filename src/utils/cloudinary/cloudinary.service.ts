@@ -15,12 +15,9 @@ export const uploadSingleFile = async ({
   fileLocation: string;
   storagePathOnCloudinary: string;
 }) => {
-  const { public_id, secure_url } = await cloudinary.uploader.upload(
-    fileLocation,
-    {
-      folder: `${process.env.APP_NAME}/${storagePathOnCloudinary}`,
-    }
-  );
+  const { public_id, secure_url } = await cloudinary.uploader.upload(fileLocation, {
+    folder: `${process.env.APP_NAME}/${storagePathOnCloudinary}`,
+  });
   //* If you used returned secure_url will not work, you have to modify it to be sutiable for browsers
   return { public_id, secure_url };
 };
@@ -45,20 +42,12 @@ export const uploadManyFiles = async ({
 };
 
 // destroySingleFile
-export const destroySingleFile = async ({
-  public_id,
-}: {
-  public_id: string;
-}) => {
+export const destroySingleFile = async ({ public_id }: { public_id: string }) => {
   await cloudinary.uploader.destroy(public_id);
 };
 
 // destroyManyFiles
-export const destroyManyFiles = async ({
-  public_ids = [],
-}: {
-  public_ids: string[];
-}) => {
+export const destroyManyFiles = async ({ public_ids = [] }: { public_ids: string[] }) => {
   await cloudinary.api.delete_resources(public_ids);
 };
 
@@ -69,7 +58,7 @@ export const deleteByPrefix = async ({
   storagePathOnCloudinary: string;
 }) => {
   await cloudinary.api.delete_resources_by_prefix(
-    `${process.env.APP_NAME}/${storagePathOnCloudinary}`
+    `${process.env.APP_NAME}/${storagePathOnCloudinary}`,
   );
 };
 
@@ -79,7 +68,5 @@ export const deleteFolder = async ({
 }: {
   storagePathOnCloudinary: string;
 }) => {
-  await cloudinary.api.delete_folder(
-    `${process.env.APP_NAME}/${storagePathOnCloudinary}`
-  );
+  await cloudinary.api.delete_folder(`${process.env.APP_NAME}/${storagePathOnCloudinary}`);
 };

@@ -20,7 +20,7 @@ export const validation = (shcema: ZodObject) => {
       const issues = result.error?.issues;
       let messages = "";
       for (let item of issues) {
-        messages += item.message + " ||&&|| ";
+        messages += String(item.path[0]) + " => " + item.message + "   ||&&||   ";
       }
       throw new ValidationError(messages, 400);
     }

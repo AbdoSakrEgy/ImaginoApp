@@ -3,26 +3,16 @@ import { successHandler } from "../../utils/successHandler";
 import { NextFunction, Request, Response } from "express";
 import { ApplicationException } from "../../utils/Errors";
 import { IUserServices, PricingPlanEnum } from "../../types/user.module.types";
-import {
-  destroySingleFile,
-  uploadSingleFile,
-} from "../../utils/cloudinary/cloudinary.service";
+import { destroySingleFile, uploadSingleFile } from "../../utils/cloudinary/cloudinary.service";
 import Stripe from "stripe";
-import {
-  createCheckoutSession,
-  createCoupon,
-} from "../../utils/stripe/stripe.service";
+import { createCheckoutSession, createCoupon } from "../../utils/stripe/stripe.service";
 
 export class UserServices implements IUserServices {
   private userModel = UserModel;
 
   constructor() {}
   // ============================ userProfile ============================
-  userProfile = async (
-    req: Request,
-    res: Response,
-    next: NextFunction
-  ): Promise<Response> => {
+  userProfile = async (req: Request, res: Response, next: NextFunction): Promise<Response> => {
     let user = res.locals.user;
     const userId = req.params?.userId;
     // step: if userId existence load that user
@@ -40,7 +30,7 @@ export class UserServices implements IUserServices {
   uploadProfileImage = async (
     req: Request,
     res: Response,
-    next: NextFunction
+    next: NextFunction,
   ): Promise<Response> => {
     const user = res.locals.user;
     const file = req.file;
@@ -57,7 +47,7 @@ export class UserServices implements IUserServices {
     const updatedUser = await this.userModel.findOneAndUpdate(
       { _id: user._id },
       { $set: { profileImage: uploadResult } },
-      { new: true }
+      { new: true },
     );
 
     return successHandler({
@@ -71,7 +61,7 @@ export class UserServices implements IUserServices {
   deleteProfileImage = async (
     req: Request,
     res: Response,
-    next: NextFunction
+    next: NextFunction,
   ): Promise<Response> => {
     const user = res.locals.user;
 
@@ -85,7 +75,7 @@ export class UserServices implements IUserServices {
     const updatedUser = await this.userModel.findOneAndUpdate(
       { _id: user._id },
       { $unset: { profileImage: "" } },
-      { new: true }
+      { new: true },
     );
 
     return successHandler({
@@ -96,11 +86,7 @@ export class UserServices implements IUserServices {
   };
 
   // ============================ updateBasicInfo ============================
-  updateBasicInfo = async (
-    req: Request,
-    res: Response,
-    next: NextFunction
-  ): Promise<Response> => {
+  updateBasicInfo = async (req: Request, res: Response, next: NextFunction): Promise<Response> => {
     const user = res.locals.user;
     const { firstName, lastName, age, gender, phone } = req.body;
 
@@ -119,7 +105,7 @@ export class UserServices implements IUserServices {
         new: true,
         runValidators: true,
         context: "query",
-      }
+      },
     );
 
     return successHandler({
@@ -130,11 +116,7 @@ export class UserServices implements IUserServices {
   };
 
   // ============================ payWithStripe ============================
-  payWithStripe = async (
-    req: Request,
-    res: Response,
-    next: NextFunction
-  ): Promise<Response> => {
+  payWithStripe = async (req: Request, res: Response, next: NextFunction): Promise<Response> => {
     const user = res.locals.user;
     const { plan, userCoupon } = req.body;
     // step: check coupon validation
@@ -199,7 +181,7 @@ export class UserServices implements IUserServices {
   webHookWithStripe = async (
     req: Request,
     res: Response,
-    next: NextFunction
+    next: NextFunction,
   ): Promise<Response> => {
     const { userId, plan } = req.body.data.object.metadata;
     // step: check order existence
@@ -211,7 +193,7 @@ export class UserServices implements IUserServices {
           pricingPlan: plan,
           avaliableCredits: 200,
         },
-      }
+      },
     );
     if (!user) throw new ApplicationException("User not found", 404);
     return successHandler({ res, message: "webHookWithStripe done" });

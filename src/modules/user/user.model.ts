@@ -2,12 +2,7 @@ import mongoose, { HydratedDocument, model, Schema, Types } from "mongoose";
 import { hash } from "../../utils/bcrypt";
 import { decrypt, encrypt } from "../../utils/crypto";
 import { ApplicationException } from "../../utils/Errors";
-import {
-  GenderEnum,
-  IUser,
-  PricingPlanEnum,
-  RoleEnum,
-} from "../../types/user.module.types";
+import { GenderEnum, IUser, PricingPlanEnum, RoleEnum } from "../../types/user.module.types";
 
 const userSchema = new Schema<IUser>(
   {
@@ -77,7 +72,7 @@ const userSchema = new Schema<IUser>(
     },
     avaliableCredits: { type: Number, default: 50 },
   },
-  { timestamps: true, toJSON: { virtuals: true }, toObject: { virtuals: true } }
+  { timestamps: true, toJSON: { virtuals: true }, toObject: { virtuals: true } },
 );
 // virtuals
 userSchema.virtual("fullName").get(function () {
@@ -92,10 +87,7 @@ userSchema.virtual("fullName").set(function (value) {
 // pre save
 userSchema.pre(
   "save",
-  async function (
-    this: HydratedDocument<IUser> & { isFirstCreation: boolean },
-    next
-  ) {
+  async function (this: HydratedDocument<IUser> & { isFirstCreation: boolean }, next) {
     this.isFirstCreation = this.isNew;
     if (this.emailOtp && this.isModified("emailOtp")) {
       this.emailOtp = {
@@ -124,7 +116,7 @@ userSchema.pre(
         expiredAt: this.otp2FA?.expiredAt,
       };
     }
-  }
+  },
 );
 
 userSchema.pre("findOneAndUpdate", async function () {

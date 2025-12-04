@@ -12,7 +12,7 @@ export const sendEmail = async ({
   const transporter = createTransport({
     host: process.env.HOST as string,
     port: 465,
-    secure: true,
+    secure: true, // true for port 465 and false for other ports
     service: "gmail",
     auth: {
       user: process.env.SENDER_EMAIL,
@@ -29,8 +29,7 @@ export const sendEmail = async ({
       subject, // Subject line
       html, // html body
     });
-    const isEmailSended =
-      Array.isArray(info?.accepted) && info.accepted.length > 0;
+    const isEmailSended = Array.isArray(info?.accepted) && info.accepted.length > 0;
     return { isEmailSended, info };
   } catch (err) {
     return { isEmailSended: false, err: err + "" };
