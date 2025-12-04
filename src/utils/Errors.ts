@@ -18,7 +18,7 @@ export class ValidationError extends ApplicationException {
 }
 
 export class NotValidEmail extends ApplicationException {
-  constructor(msg: string = "Not validation email, plz valid it", statusCode: number = 400) {
+  constructor(msg: string = "This Email is not valid", statusCode: number = 400) {
     super(msg, statusCode);
   }
 }
