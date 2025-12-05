@@ -19,6 +19,8 @@ import {
   generateBackgroundWithStability,
   StabilityBackgroundOptions,
 } from "../../utils/ai/stability";
+import { extractTextFromImgFn } from "../../utils/GenAI/extract.text.from.img";
+import { recognizeItemsInImgFn } from "../../utils/GenAI/recognize.items.in.image";
 
 type BackgroundTheme = "vehicle" | "beauty" | "fashion" | "food" | "tech" | "furniture" | "generic";
 
@@ -206,15 +208,15 @@ export class ImageServices implements IImageServices {
   }
 
   ensureTmpDirectory(subdir: string): string {
-  const baseDir = '/tmp'; // Lambda's writable directory
-  const fullPath = path.join(baseDir, subdir);
-  
-  if (!fs.existsSync(fullPath)) {
-    fs.mkdirSync(fullPath, { recursive: true });
+    const baseDir = "/tmp"; // Lambda's writable directory
+    const fullPath = path.join(baseDir, subdir);
+
+    if (!fs.existsSync(fullPath)) {
+      fs.mkdirSync(fullPath, { recursive: true });
+    }
+
+    return fullPath;
   }
-  
-  return fullPath;
-}
 
   private async downloadImageAsBuffer(url: string): Promise<Buffer> {
     const response = await axios.get(url, { responseType: "arraybuffer" });
@@ -1372,6 +1374,90 @@ export class ImageServices implements IImageServices {
     });
   };
 
+  // ============================ extractTextFromImg ============================
+  extractTextFromImg = async (
+    req: Request,
+    res: Response,
+    next: NextFunction,
+  ): Promise<Response> => {
+    const user = res.locals.user;
+    const file = req.file;
+    // step: check file existence
+    if (!file) {
+      throw new ApplicationException("file is required", 400);
+    }
+    // step: Store ORIGINAL image in Cloudinary and DB
+    const { public_id, secure_url } = await uploadSingleFile({
+      fileLocation: (file as any).path,
+      storagePathOnCloudinary: `ImaginoApp/genInhancedQuality/${user._id}`,
+    });
+    const originalImage = await this.imageModel.create({
+      user: user._id,
+      url: secure_url,
+      storageKey: public_id,
+      filename: file.filename,
+      originalFilename: file.originalname,
+      mimeType: file.mimetype,
+      size: file.size,
+      children: [],
+      isOriginal: true,
+      version: 1,
+      aiEdits: [],
+      status: "completed" as const,
+      tags: ["extractTextFromImg"],
+      title: file.originalname,
+      description: "Original upload for quality enhancement",
+      category: "other" as const,
+      isPublic: false,
+      views: 0,
+      downloads: 0,
+    });
+    // step: extract text
+    const text = await extractTextFromImgFn(file);
+    return successHandler({ res, result: { text } });
+  };
+  // ============================ recognizeItemsInImage ============================
+  recognizeItemsInImage = async (
+    req: Request,
+    res: Response,
+    next: NextFunction,
+  ): Promise<Response> => {
+    const user = res.locals.user;
+    const file = req.file;
+    // step: check file existence
+    if (!file) {
+      throw new ApplicationException("file is required", 400);
+    }
+    // step: Store ORIGINAL image in Cloudinary and DB
+    const { public_id, secure_url } = await uploadSingleFile({
+      fileLocation: (file as any).path,
+      storagePathOnCloudinary: `ImaginoApp/genInhancedQuality/${user._id}`,
+    });
+    const originalImage = await this.imageModel.create({
+      user: user._id,
+      url: secure_url,
+      storageKey: public_id,
+      filename: file.filename,
+      originalFilename: file.originalname,
+      mimeType: file.mimetype,
+      size: file.size,
+      children: [],
+      isOriginal: true,
+      version: 1,
+      aiEdits: [],
+      status: "completed" as const,
+      tags: ["recognizeItemsInImage"],
+      title: file.originalname,
+      description: "Original upload for quality enhancement",
+      category: "other" as const,
+      isPublic: false,
+      views: 0,
+      downloads: 0,
+    });
+    // step: extract text
+    const text = await recognizeItemsInImgFn(file);
+    return successHandler({ res, result: { text } });
+  };
   // ============================ getAllImages ============================
   getAllImages = async (req: Request, res: Response, next: NextFunction): Promise<Response> => {
     const { isPublic, category, tags, page = 1, size = 20 } = req.query;

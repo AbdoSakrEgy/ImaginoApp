@@ -31,6 +31,18 @@ router.post(
   multerUpload({}).array("images"),
   imageServices.genMergeLogoToImg,
 );
+router.post(
+  "/extract-text-from-img",
+  auth,
+  multerUpload({}).single("image"),
+  imageServices.extractTextFromImg,
+);
+router.post(
+  "/recognize-items-in-img",
+  auth,
+  multerUpload({}).single("image"),
+  imageServices.recognizeItemsInImage,
+);
 // M.Ashref
 router.get("/getall", auth, imageServices.getAllImages);
 router.delete("/delete/:imageId", auth, imageServices.deleteImage);
