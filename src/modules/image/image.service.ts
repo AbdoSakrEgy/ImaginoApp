@@ -848,13 +848,6 @@ export class ImageServices implements IImageServices {
     });
   };
 
-  // ============================ gitImage ============================
-  gitImage = async (req: Request, res: Response, next: NextFunction): Promise<Response> => {
-    const user = res.locals.user;
-    const { imageId } = req.params;
-    const image = await this.imageModel.findById(imageId);
-    return successHandler({ res, result: { image } });
-  };
 
   // ============================ getAllImages ============================
   getAllImages = async (req: Request, res: Response, next: NextFunction): Promise<Response> => {
