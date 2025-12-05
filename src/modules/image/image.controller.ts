@@ -2,46 +2,24 @@ import { Router } from "express";
 import { auth } from "../../middlewares/auth.middleware";
 import { ImageServices } from "./image.service";
 import { multerUpload } from "../../utils/multer/multer.upload";
+import { StoreInEnum } from "./../../utils/multer/multer.upload";
 const router = Router();
 const imageServices = new ImageServices();
+const upload = multerUpload({ sendedFileDest: "tmp", storeIn: StoreInEnum.disk });
 
-router.get("/git-image/:imageId", auth, imageServices.gitImage);
-router.post("/gen-sutiable-backgrounds", auth, imageServices.genSutiableBackgrounds);
+// Hamza
 router.post("/gen-img-with-selected-background", auth, imageServices.genImgWithSelectedBackground);
 router.post("/gen-img-with-new-background", auth, imageServices.genImgWithNewBackground);
 router.post("/gen-resize-img", auth, imageServices.genResizeImg);
-router.post(
-  "/gen-img-with-new-dimension",
-  auth,
-  multerUpload({}).single("image"),
-  imageServices.genImgWithNewDimension,
-);
-router.post(
-  "/gen-inhanced-quality-img",
-  auth,
-  multerUpload({}).single("image"),
-  imageServices.genInhancedQualityImg,
-);
-router.post(
-  "/gen-merge-logo-to-img",
-  auth,
-  multerUpload({}).array("images"),
-  imageServices.genMergeLogoToImg,
-);
-
-import { StoreInEnum } from "./../../utils/multer/multer.upload";
-
-const upload = multerUpload({ sendedFileDest: "tmp", storeIn: StoreInEnum.disk });
-
+// Abdulrahim
+router.get("/git-image/:imageId", auth, imageServices.gitImage);
+router.post("/gen-img-with-new-dimension",auth,multerUpload({}).single("image"),imageServices.genImgWithNewDimension,);
+router.post("/gen-inhanced-quality-img",auth,multerUpload({}).single("image"),imageServices.genInhancedQualityImg,);
+router.post("/gen-merge-logo-to-img",auth,multerUpload({}).array("images"),imageServices.genMergeLogoToImg,);
+// M.Ashref
 router.get("/getall", auth, imageServices.getAllImages);
 router.delete("/delete/:imageId", auth, imageServices.deleteImage);
-
-router.post(
-  "/gen-img-without-background",
-
-  auth,
-  upload.single("imageFile"),
-  imageServices.genImgWithoutBackground,
-);
+router.post("/gen-img-without-background",auth,upload.single("imageFile"),imageServices.genImgWithoutBackground,);
+router.post("/gen-sutiable-backgrounds", auth, imageServices.genSutiableBackgrounds);
 
 export default router;
