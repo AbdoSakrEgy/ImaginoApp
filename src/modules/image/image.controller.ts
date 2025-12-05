@@ -2,14 +2,17 @@ import { Router } from "express";
 import { auth } from "../../middlewares/auth.middleware";
 import { ImageServices } from "./image.service";
 import { multerUpload } from "../../utils/multer/multer.upload";
+import { StoreInEnum } from "./../../utils/multer/multer.upload";
 const router = Router();
 const imageServices = new ImageServices();
+const upload = multerUpload({ sendedFileDest: "tmp", storeIn: StoreInEnum.disk });
 
-router.get("/get-image", auth, imageServices.getImage);
-router.post("/gen-sutiable-backgrounds", auth, imageServices.genSutiableBackgrounds);
+// Hamza
 router.post("/gen-img-with-selected-background", auth, imageServices.genImgWithSelectedBackground);
 router.post("/gen-img-with-new-background", auth, imageServices.genImgWithNewBackground);
 router.post("/gen-resize-img", auth, multerUpload({}).single("image"), imageServices.genResizeImg);
+router.get("/get-image/:imageId", auth, imageServices.getImage);
+// Abdulrahim
 router.post(
   "/gen-img-with-new-dimension",
   auth,
@@ -28,14 +31,10 @@ router.post(
   multerUpload({}).array("images"),
   imageServices.genMergeLogoToImg,
 );
-
-import { StoreInEnum } from "./../../utils/multer/multer.upload";
-
-const upload = multerUpload({ sendedFileDest: "tmp", storeIn: StoreInEnum.disk });
-
+// M.Ashref
 router.get("/getall", auth, imageServices.getAllImages);
 router.delete("/delete/:imageId", auth, imageServices.deleteImage);
-
+router.post("/gen-sutiable-backgrounds", auth, imageServices.genSutiableBackgrounds);
 router.post(
   "/gen-img-without-background",
   auth,

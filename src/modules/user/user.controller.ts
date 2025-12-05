@@ -17,6 +17,7 @@ import { PricingPlanEnum } from "../../types/user.module.types";
 const router = Router();
 const userServices = new UserServices();
 
+router.get("/test", userServices.test);
 router.get("/user-profile", auth, authPlans([PricingPlanEnum.PRO]), userServices.userProfile);
 router.get("/user-profile/:userId", auth, userServices.userProfile);
 router.patch(

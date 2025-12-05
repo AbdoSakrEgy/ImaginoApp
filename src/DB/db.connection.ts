@@ -5,7 +5,7 @@ export const connectDB = async () => {
     throw new Error("MONGODB_ATLAS_URL is missing!");
   }
   await mongoose
-    .connect(process.env.MONGODB_ATLAS_URL)
+    .connect(process.env.MONGODB_ATLAS_URL as string)
     .then(() => {
       console.log("DB connected successfully");
     })

@@ -27,20 +27,20 @@ export const multerUpload = ({
     storeIn === StoreInEnum.memory
       ? multer.memoryStorage()
       : multer.diskStorage({
-          destination: (req: any, file, cb) => {
-            const userId = req.user?._id?.toString() || "anonymous";
-            const fullDest = path.join("uploads", sendedFileDest, userId);
-            if (!fs.existsSync(fullDest)) {
-              fs.mkdirSync(fullDest, { recursive: true });
-            }
-            cb(null, fullDest);
-          },
-          filename: (req: any, file, cb) => {
-            const timestamp = Date.now();
-            const ext = path.extname(file.originalname);
-            const name = path.basename(file.originalname, ext);
-            cb(null, `${name}-${timestamp}${ext}`);
-          },
+          // destination: (req: any, file, cb) => {
+          //   const userId = req.user?._id?.toString() || "anonymous";
+          //   const fullDest = path.join("uploads", sendedFileDest, userId);
+          //   if (!fs.existsSync(fullDest)) {
+          //     fs.mkdirSync(fullDest, { recursive: true });
+          //   }
+          //   cb(null, fullDest);
+          // },
+          // filename: (req: any, file, cb) => {
+          //   const timestamp = Date.now();
+          //   const ext = path.extname(file.originalname);
+          //   const name = path.basename(file.originalname, ext);
+          //   cb(null, `${name}-${timestamp}${ext}`);
+          // },
         });
 
   const fileFilter = (req: Request, file: Express.Multer.File, cb: CallableFunction) => {

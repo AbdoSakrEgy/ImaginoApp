@@ -205,14 +205,16 @@ export class ImageServices implements IImageServices {
     } as Partial<IImage> & { _id: mongoose.Types.ObjectId };
   }
 
-  private ensureTmpDirectory(subFolder = "") {
-    const baseTmp = path.join(__dirname, "../../tmp");
-    const finalPath = subFolder ? path.join(baseTmp, subFolder) : baseTmp;
-    if (!fs.existsSync(finalPath)) {
-      fs.mkdirSync(finalPath, { recursive: true });
-    }
-    return finalPath;
+  ensureTmpDirectory(subdir: string): string {
+  const baseDir = '/tmp'; // Lambda's writable directory
+  const fullPath = path.join(baseDir, subdir);
+  
+  if (!fs.existsSync(fullPath)) {
+    fs.mkdirSync(fullPath, { recursive: true });
   }
+  
+  return fullPath;
+}
 
   private async downloadImageAsBuffer(url: string): Promise<Buffer> {
     const response = await axios.get(url, { responseType: "arraybuffer" });

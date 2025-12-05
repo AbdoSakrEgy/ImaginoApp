@@ -1,13 +1,26 @@
-// config
-const cloudinary = require("cloudinary").v2;
-cloudinary.config({
-  cloud_name: process.env.CLOUD_NAME,
-  api_key: process.env.API_KEY,
-  api_secret: process.env.API_SECRET,
-  secure: true,
-});
+// cloudinary.service.ts
+import cloudinaryModule from "cloudinary";
 
-// uploadSingleFile
+let isCloudinaryInitialized = false;
+const cloudinary = cloudinaryModule.v2;
+
+// Lazy initialization function
+const initCloudinary = () => {
+  if (isCloudinaryInitialized) return;
+
+  cloudinary.config({
+    cloud_name: process.env.CLOUD_NAME as string,
+    api_key: process.env.API_KEY as string,
+    api_secret: process.env.API_SECRET as string,
+    secure: true,
+  });
+
+  isCloudinaryInitialized = true;
+};
+
+// ------------------------------------------------------------------
+// SINGLE FILE UPLOAD
+// ------------------------------------------------------------------
 export const uploadSingleFile = async ({
   fileLocation,
   storagePathOnCloudinary = "ImaginoApp",
@@ -15,14 +28,18 @@ export const uploadSingleFile = async ({
   fileLocation: string;
   storagePathOnCloudinary: string;
 }) => {
+  initCloudinary();
+
   const { public_id, secure_url } = await cloudinary.uploader.upload(fileLocation, {
     folder: `${process.env.APP_NAME}/${storagePathOnCloudinary}`,
   });
-  //* If you used returned secure_url will not work, you have to modify it to be sutiable for browsers
+
   return { public_id, secure_url };
 };
 
-// uploadManyFiles
+// ------------------------------------------------------------------
+// MULTIPLE FILE UPLOAD
+// ------------------------------------------------------------------
 export const uploadManyFiles = async ({
   fileLocationArr = [],
   storagePathOnCloudinary = "ImaginoApp",
@@ -30,7 +47,9 @@ export const uploadManyFiles = async ({
   fileLocationArr: string[];
   storagePathOnCloudinary: string;
 }) => {
-  let images = [];
+  initCloudinary();
+
+  const images = [];
   for (const item of fileLocationArr) {
     const { public_id, secure_url } = await uploadSingleFile({
       fileLocation: item,
@@ -41,32 +60,44 @@ export const uploadManyFiles = async ({
   return images;
 };
 
-// destroySingleFile
+// ------------------------------------------------------------------
+// DESTROY SINGLE FILE
+// ------------------------------------------------------------------
 export const destroySingleFile = async ({ public_id }: { public_id: string }) => {
+  initCloudinary();
   await cloudinary.uploader.destroy(public_id);
 };
 
-// destroyManyFiles
+// ------------------------------------------------------------------
+// DESTROY MULTIPLE FILES
+// ------------------------------------------------------------------
 export const destroyManyFiles = async ({ public_ids = [] }: { public_ids: string[] }) => {
+  initCloudinary();
   await cloudinary.api.delete_resources(public_ids);
 };
 
-// deleteByPrefix
+// ------------------------------------------------------------------
+// DELETE BY PREFIX
+// ------------------------------------------------------------------
 export const deleteByPrefix = async ({
   storagePathOnCloudinary,
 }: {
   storagePathOnCloudinary: string;
 }) => {
+  initCloudinary();
   await cloudinary.api.delete_resources_by_prefix(
     `${process.env.APP_NAME}/${storagePathOnCloudinary}`,
   );
 };
 
-// deleteFolder
+// ------------------------------------------------------------------
+// DELETE FOLDER
+// ------------------------------------------------------------------
 export const deleteFolder = async ({
   storagePathOnCloudinary,
 }: {
   storagePathOnCloudinary: string;
 }) => {
+  initCloudinary();
   await cloudinary.api.delete_folder(`${process.env.APP_NAME}/${storagePathOnCloudinary}`);
 };
