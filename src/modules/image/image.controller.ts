@@ -9,12 +9,7 @@ router.get("/get-image", auth, imageServices.getImage);
 router.post("/gen-sutiable-backgrounds", auth, imageServices.genSutiableBackgrounds);
 router.post("/gen-img-with-selected-background", auth, imageServices.genImgWithSelectedBackground);
 router.post("/gen-img-with-new-background", auth, imageServices.genImgWithNewBackground);
-router.post(
-  "/gen-resize-img",
-  auth,
-  multerUpload({}).single("image"),
-  imageServices.genResizeImg,
-);
+router.post("/gen-resize-img", auth, multerUpload({}).single("image"), imageServices.genResizeImg);
 router.post(
   "/gen-img-with-new-dimension",
   auth,
@@ -46,7 +41,7 @@ router.post(
 
   auth,
   upload.single("imageFile"),
-  imageServices.uploadImageWithoutBackground,
+  imageServices.genImgWithoutBackground,
 );
 
 export default router;

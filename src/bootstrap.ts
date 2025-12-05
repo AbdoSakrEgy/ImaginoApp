@@ -1,57 +1,57 @@
-import express, { NextFunction, Request, Response } from "express";
-import path from "path";
-import dotenv from "dotenv";
-const app = express();
-dotenv.config({
-  path: path.resolve("./src/config/.env"),
-});
-import router from "./routes";
-import { connectDB } from "./DB/db.connection";
-import { ApplicationException, IError } from "./utils/Errors";
-import cors from "cors";
-import { rateLimit } from "express-rate-limit";
+// import dotenv from "dotenv";
+// dotenv.config({ path: "./src/config/.env" });
+// import express, { NextFunction, Request, Response } from "express";
+// import cors from "cors";
+// import { rateLimit } from "express-rate-limit";
+// import router from "./routes";
+// import { ApplicationException, IError } from "./utils/Errors";
+// import { connectDB } from "./DB/db.connection";
 
-var whitelist = ["http://example1.com", "http://example2.com", "http://127.0.0.1:5501", undefined];
-var corsOptions = {
-  origin: function (origin: any, callback: any) {
-    if (whitelist.indexOf(origin) !== -1) {
-      callback(null, true);
-    } else {
-      callback(new ApplicationException("Not allowed by CORS", 401));
-    }
-  },
-};
-const limiter = rateLimit({
-  windowMs: 15 * 60 * 1000, // 15 minutes
-  limit: 200,
-  standardHeaders: "draft-8",
-  legacyHeaders: false,
-  ipv6Subnet: 56,
-});
-const bootstrap = async () => {
-  await connectDB();
+// const app = express();
 
-  app.use(cors(corsOptions));
-  app.use(limiter);
-  app.use(express.json());
-  app.use("/api/v1", router);
-  app.use((err: IError, req: Request, res: Response, next: NextFunction) => {
-    res.status(err.statusCode || 500).json({
-      errMsg: err.message,
-      status: err.statusCode || 500,
-      stack: err.stack,
-    });
-  });
-  app.use((req: Request, res: Response) => {
-    res.status(404).json({
-      errMsg: "Route Not Found",
-      status: 404,
-    });
-  });
-  const httpServer = app.listen(process.env.PORT, () => {
-    console.log("Backend server is running on port", process.env.PORT);
-    console.log("=========================================");
-  });
-};
+// // Middleware
+// var whitelist = ["http://example1.com", "http://example2.com", "http://127.0.0.1:5501", undefined];
 
-export default bootstrap;
+// var corsOptions = {
+//   origin: function (origin: any, callback: any) {
+//     if (whitelist.indexOf(origin) !== -1) {
+//       callback(null, true);
+//     } else {
+//       callback(new ApplicationException("Not allowed by CORS", 401));
+//     }
+//   },
+// };
+
+// // app.use(cors(corsOptions));
+// app.use(express.json());
+// app.use("/api/v1", router);
+
+// // Global error handler
+// app.use((err: IError, req: Request, res: Response, next: NextFunction) => {
+//   res.status(err.statusCode || 500).json({
+//     errMsg: err.message,
+//     status: err.statusCode || 500,
+//     stack: err.stack,
+//   });
+// });
+
+// // Only start server locally
+// if (process.env.NODE_ENV !== "production" && !process.env.VERCEL) {
+//   const startServer = async () => {
+//     try {
+//       await connectDB(); // ✅ wait for DB connection
+//       console.log("DB connected, starting server...");
+
+//       app.listen(3000, () => {
+//         console.log("Server running on port 3000");
+//       });
+//     } catch (err) {
+//       console.error("Failed to start server:", err);
+//       process.exit(1); // Stop server if DB fails
+//     }
+//   };
+
+//   startServer();
+// }
+
+// export default app;

@@ -106,7 +106,11 @@ export class ImageServices implements IImageServices {
       deletedAt: null,
     };
 
-    let imageQuery = this.imageModel.findOneAndUpdate(baseQuery, { $inc: { views: 1 } }, { new: true });
+    let imageQuery = this.imageModel.findOneAndUpdate(
+      baseQuery,
+      { $inc: { views: 1 } },
+      { new: true },
+    );
 
     if (includeChildren) {
       imageQuery = imageQuery.populate({
@@ -136,7 +140,12 @@ export class ImageServices implements IImageServices {
       image: this.serializeImageDoc(imageDoc),
     };
 
-    if (includeParent && imageDoc.parentId && typeof imageDoc.parentId === "object" && "_id" in imageDoc.parentId) {
+    if (
+      includeParent &&
+      imageDoc.parentId &&
+      typeof imageDoc.parentId === "object" &&
+      "_id" in imageDoc.parentId
+    ) {
       result.parent = this.serializeImageDoc(imageDoc.parentId);
     }
 
@@ -193,17 +202,8 @@ export class ImageServices implements IImageServices {
     }
 
     const file = req.file as Express.Multer.File | undefined;
-    const {
-      imageId,
-      width,
-      height,
-      fit,
-      background,
-      format,
-      quality,
-      allowUpscale,
-      position,
-    } = req.body || {};
+    const { imageId, width, height, fit, background, format, quality, allowUpscale, position } =
+      req.body || {};
 
     const parseDimension = (value: unknown) => {
       if (typeof value === "undefined" || value === null || value === "") {
@@ -226,8 +226,15 @@ export class ImageServices implements IImageServices {
       throw new ApplicationException("Provide at least one dimension (width or height)", 400);
     }
 
-    const fitOptions: Array<keyof sharp.FitEnum> = ["cover", "contain", "fill", "inside", "outside"];
-    const fitValue = typeof fit === "string" ? (fit.toLowerCase() as keyof sharp.FitEnum) : undefined;
+    const fitOptions: Array<keyof sharp.FitEnum> = [
+      "cover",
+      "contain",
+      "fill",
+      "inside",
+      "outside",
+    ];
+    const fitValue =
+      typeof fit === "string" ? (fit.toLowerCase() as keyof sharp.FitEnum) : undefined;
     const normalizedFit: keyof sharp.FitEnum =
       fitValue && fitOptions.includes(fitValue) ? fitValue : "inside";
 
@@ -417,11 +424,7 @@ export class ImageServices implements IImageServices {
         },
       ],
       status: "completed" as const,
-      tags: [
-        "genResizeImg",
-        `${targetWidth || "auto"}x${targetHeight || "auto"}`,
-        preferredFormat,
-      ],
+      tags: ["genResizeImg", `${targetWidth || "auto"}x${targetHeight || "auto"}`, preferredFormat],
       title: `Resized - ${parentImage.title || parentImage.filename}`,
       description: `Resized image to ${targetWidth || "auto"}x${targetHeight || "auto"}`,
       category: parentImage.category || "other",
@@ -845,6 +848,14 @@ export class ImageServices implements IImageServices {
     });
   };
 
+  // ============================ gitImage ============================
+  gitImage = async (req: Request, res: Response, next: NextFunction): Promise<Response> => {
+    const user = res.locals.user;
+    const { imageId } = req.params;
+    const image = await this.imageModel.findById(imageId);
+    return successHandler({ res, result: { image } });
+  };
+
   // ============================ getAllImages ============================
   getAllImages = async (req: Request, res: Response, next: NextFunction): Promise<Response> => {
     const { isPublic, category, tags, page = 1, size = 20 } = req.query;
@@ -972,8 +983,8 @@ export class ImageServices implements IImageServices {
     });
   };
 
-  // ============================ uploadImageWithoutBackground ============================
-  uploadImageWithoutBackground = async (
+  // ============================ genImgWithoutBackground ============================
+  genImgWithoutBackground = async (
     req: Request,
     res: Response,
     next: NextFunction,
