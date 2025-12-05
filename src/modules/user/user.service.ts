@@ -11,6 +11,11 @@ export class UserServices implements IUserServices {
   private userModel = UserModel;
 
   constructor() {}
+  // ============================ test ============================
+  test = async (req: Request, res: Response, next: NextFunction): Promise<Response> => {
+    return successHandler({ res, result: { test: "test" } });
+  };
+
   // ============================ userProfile ============================
   userProfile = async (req: Request, res: Response, next: NextFunction): Promise<Response> => {
     let user = res.locals.user;
