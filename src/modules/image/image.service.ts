@@ -24,7 +24,6 @@ import { recognizeItemsInImgFn } from "../../utils/GenAI/recognize.items.in.imag
 import path from "path";
 import { generateSuitableBackgrounds } from "../../utils/ai/generateSuitableBackgrounds";
 import FormData from "form-data";
-import fetch from "node-fetch";
 type BackgroundTheme = "vehicle" | "beauty" | "fashion" | "food" | "tech" | "furniture" | "generic";
 
 const THEME_KEYWORDS: Array<{ theme: BackgroundTheme; keywords: string[] }> = [
