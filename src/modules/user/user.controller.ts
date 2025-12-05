@@ -37,6 +37,8 @@ router.patch(
 );
 router.post("/pay-with-stripe", auth, validation(payWithStripeSchema), userServices.payWithStripe);
 router.post("/web-hook-with-stripe", userServices.webHookWithStripe);
+router.get("/images", auth, userServices.getUserImages);
+
 
 // router.get("/get-file/*path", userServices.getFile);
 // router.get(

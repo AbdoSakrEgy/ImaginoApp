@@ -34,12 +34,19 @@ router.post(
 // M.Ashref
 router.get("/getall", auth, imageServices.getAllImages);
 router.delete("/delete/:imageId", auth, imageServices.deleteImage);
-router.post("/gen-sutiable-backgrounds", auth, imageServices.genSutiableBackgrounds);
+router.post("/gen-sutiable-backgrounds", auth, imageServices.generateSuitableBackgroundsFromImage);
 router.post(
   "/gen-img-without-background",
+
   auth,
   upload.single("imageFile"),
-  imageServices.genImgWithoutBackground,
+  imageServices.uploadImageWithoutBackground,
+);
+
+router.post(
+  "/generate-suitable-bg/:imageId",
+  auth,
+  imageServices.generateSuitableBackgroundsFromImage,
 );
 
 export default router;

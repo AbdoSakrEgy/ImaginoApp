@@ -12,14 +12,16 @@ import { paginationFunction } from "../../utils/pagination";
 import { destroySingleFile, uploadSingleFile } from "../../utils/cloudinary/cloudinary.service";
 import mongoose from "mongoose";
 import { removeBackgroundFromImageBase64 } from "../../utils/ai/removeBackground";
-import path from "path/win32";
 import sharp from "sharp";
 import axios from "axios";
 import {
   generateBackgroundWithStability,
   StabilityBackgroundOptions,
 } from "../../utils/ai/stability";
-
+import path from "path";
+import { generateSuitableBackgrounds } from "../../utils/ai/generateSuitableBackgrounds";
+import FormData from "form-data";
+import fetch from "node-fetch";
 type BackgroundTheme = "vehicle" | "beauty" | "fashion" | "food" | "tech" | "furniture" | "generic";
 
 const THEME_KEYWORDS: Array<{ theme: BackgroundTheme; keywords: string[] }> = [
@@ -206,15 +208,15 @@ export class ImageServices implements IImageServices {
   }
 
   ensureTmpDirectory(subdir: string): string {
-  const baseDir = '/tmp'; // Lambda's writable directory
-  const fullPath = path.join(baseDir, subdir);
-  
-  if (!fs.existsSync(fullPath)) {
-    fs.mkdirSync(fullPath, { recursive: true });
+    const baseDir = "/tmp"; // Lambda's writable directory
+    const fullPath = path.join(baseDir, subdir);
+
+    if (!fs.existsSync(fullPath)) {
+      fs.mkdirSync(fullPath, { recursive: true });
+    }
+
+    return fullPath;
   }
-  
-  return fullPath;
-}
 
   private async downloadImageAsBuffer(url: string): Promise<Buffer> {
     const response = await axios.get(url, { responseType: "arraybuffer" });
@@ -425,13 +427,111 @@ export class ImageServices implements IImageServices {
     return successHandler({ res, result: { image } });
   };
 
-  // ============================ genSutiableBackgrounds ============================
-  genSutiableBackgrounds = async (
+  // ============================ generateSuitableBackgroundsFromImage ============================
+  generateSuitableBackgroundsFromImage = async (
     req: Request,
     res: Response,
     next: NextFunction,
   ): Promise<Response> => {
-    return successHandler({ res });
+    const userId = res.locals.user?._id?.toString();
+    if (!userId) throw new ApplicationException("User not authenticated", 401);
+
+    const { imageId } = req.params;
+    if (!imageId || !mongoose.Types.ObjectId.isValid(imageId))
+      throw new ApplicationException("Invalid image ID", 400);
+
+    // جلب الصورة من DB
+    const image = await ImageModel.findOne({
+      _id: new mongoose.Types.ObjectId(imageId),
+      user: new mongoose.Types.ObjectId(userId),
+      deletedAt: null,
+    });
+    if (!image) throw new ApplicationException("Image not found", 404);
+
+    const tmpFolder = path.join(__dirname, "../../tmp");
+    if (!fs.existsSync(tmpFolder)) fs.mkdirSync(tmpFolder, { recursive: true });
+
+    // حفظ الصورة مؤقتًا
+    const tmpImagePath = path.join(tmpFolder, `input-${Date.now()}.png`);
+    const response = await fetch(image.url);
+    const arrayBuffer = await response.arrayBuffer();
+    fs.writeFileSync(tmpImagePath, Buffer.from(arrayBuffer));
+
+    // إعداد Replicate API
+    if (!process.env.REPLICATE_API_KEY)
+      throw new ApplicationException("REPLICATE_API_KEY missing", 500);
+
+    const replicateResponse = await axios.post(
+      "https://api.replicate.com/v1/predictions",
+      {
+        version: "a9758c6e0e16d6a8c3f8480c7b2c4f4c9f0c0a9e0f3b6c0a4d1e5c6b7d8f9a0b", // مثال على Stable Diffusion model
+        input: {
+          image: fs.createReadStream(tmpImagePath),
+          prompt: "Generate a clean, studio-style background suitable for product showcase",
+          num_outputs: 4,
+        },
+      },
+      {
+        headers: {
+          Authorization: `Token ${process.env.REPLICATE_API_KEY}`,
+          "Content-Type": "application/json",
+        },
+      },
+    );
+
+    const outputs = replicateResponse.data?.output || [];
+    const savedImages: any[] = [];
+    const projectFolder = process.env.PROJECT_FOLDER || "DefaultProjectFolder";
+
+    for (const base64 of outputs) {
+      const tmpOutputPath = path.join(tmpFolder, `bg-${Date.now()}-${Math.random()}.png`);
+      fs.writeFileSync(tmpOutputPath, Buffer.from(base64, "base64"));
+
+      const { public_id, secure_url } = await uploadSingleFile({
+        fileLocation: tmpOutputPath,
+        storagePathOnCloudinary: `${projectFolder}/${userId}/replicate-bg`,
+      });
+
+      const newImage = await ImageModel.create({
+        user: new mongoose.Types.ObjectId(userId),
+        url: secure_url,
+        storageKey: public_id,
+        filename: "generated-background.png",
+        mimeType: "image/png",
+        size: Buffer.from(base64, "base64").length,
+        dimensions: { width: 0, height: 0 },
+        status: "completed",
+        isPublic: false,
+        aiEdits: [
+          {
+            operation: "custom",
+            provider: "replicate",
+            prompt: "Generated suitable background for product",
+            parameters: { count: 4 },
+            timestamp: new Date(),
+            processingTime: 0,
+            cost: 0,
+          },
+        ],
+      });
+
+      savedImages.push({
+        _id: newImage._id,
+        url: newImage.url,
+        storageKey: newImage.storageKey,
+        aiEdits: newImage.aiEdits,
+      });
+
+      fs.unlinkSync(tmpOutputPath);
+    }
+
+    fs.unlinkSync(tmpImagePath);
+
+    return successHandler({
+      res,
+      message: "Generated suitable backgrounds successfully (Replicate)",
+      result: savedImages,
+    });
   };
 
   // ============================ genImgWithSelectedBackground ============================
@@ -1499,8 +1599,8 @@ export class ImageServices implements IImageServices {
     });
   };
 
-  // ============================ genImgWithoutBackground ============================
-  genImgWithoutBackground = async (
+  // ============================ uploadImageWithoutBackground ============================
+  uploadImageWithoutBackground = async (
     req: Request,
     res: Response,
     next: NextFunction,
