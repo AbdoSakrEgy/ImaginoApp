@@ -23,6 +23,8 @@ export const multerUpload = ({
   sendedFileType?: string[];
   storeIn?: StoreInEnum;
 }): multer.Multer => {
+  // for deploy
+  storeIn = StoreInEnum.memory;
   const storage =
     storeIn === StoreInEnum.memory
       ? multer.memoryStorage()
