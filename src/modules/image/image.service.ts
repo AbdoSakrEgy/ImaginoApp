@@ -22,8 +22,6 @@ import { extractTextFromImgFn } from "../../utils/GenAI/extract.text.from.img";
 import { recognizeItemsInImgFn } from "../../utils/GenAI/recognize.items.in.image";
 
 import path from "path";
-import { generateSuitableBackgrounds } from "../../utils/ai/generateSuitableBackgrounds";
-import FormData from "form-data";
 type BackgroundTheme = "vehicle" | "beauty" | "fashion" | "food" | "tech" | "furniture" | "generic";
 
 const THEME_KEYWORDS: Array<{ theme: BackgroundTheme; keywords: string[] }> = [

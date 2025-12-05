@@ -13,19 +13,19 @@ dotenv.config({
 const app = express();
 
 // Middleware
-var whitelist = ["http://example1.com", "http://example2.com", "http://127.0.0.1:5501", undefined];
+// var whitelist = ["http://example1.com", "http://example2.com", "http://127.0.0.1:5501", undefined];
 
-var corsOptions = {
-  origin: function (origin: any, callback: any) {
-    if (whitelist.indexOf(origin) !== -1) {
-      callback(null, true);
-    } else {
-      callback(new ApplicationException("Not allowed by CORS", 401));
-    }
-  },
-};
+// var corsOptions = {
+//   origin: function (origin: any, callback: any) {
+//     if (whitelist.indexOf(origin) !== -1) {
+//       callback(null, true);
+//     } else {
+//       callback(new ApplicationException("Not allowed by CORS", 401));
+//     }
+//   },
+// };
 
-app.use(cors(corsOptions));
+app.use(cors());
 app.use(express.json());
 app.use("/api/v1", router);
 
