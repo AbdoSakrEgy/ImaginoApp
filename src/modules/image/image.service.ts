@@ -6,6 +6,7 @@ import { ApplicationException } from "../../utils/Errors";
 import { IImageServices } from "../../types/image.module.types";
 import { genImgWithNewDimensionFn } from "../../utils/GenAI/gen.img.with.new.dimension";
 import * as fs from "fs";
+import os from "os";
 import { genInhancedQualityImgFn } from "../../utils/GenAI/gen.inhanced.quality.img";
 import { genMergeLogoToImgFn } from "../../utils/GenAI/gen-merge-logo-to-img";
 import { paginationFunction } from "../../utils/pagination";
@@ -207,9 +208,23 @@ export class ImageServices implements IImageServices {
     } as Partial<IImage> & { _id: mongoose.Types.ObjectId };
   }
 
+  private resolveWritableTmpRoot(): string {
+    const explicit =
+      process.env.IMAGINO_TMP_DIR || process.env.TMPDIR || process.env.TEMP || process.env.TMP;
+    if (explicit) {
+      return path.isAbsolute(explicit) ? explicit : path.join(process.cwd(), explicit);
+    }
+
+    if (process.env.VERCEL) {
+      return path.join("/tmp", "imagino");
+    }
+
+    return path.join(os.tmpdir(), "imagino");
+  }
+
   ensureTmpDirectory(subdir: string): string {
-    const baseDir = "/tmp"; // Lambda's writable directory
-    const fullPath = path.join(baseDir, subdir);
+    const baseDir = this.resolveWritableTmpRoot();
+    const fullPath = subdir ? path.join(baseDir, subdir) : baseDir;
 
     if (!fs.existsSync(fullPath)) {
       fs.mkdirSync(fullPath, { recursive: true });
