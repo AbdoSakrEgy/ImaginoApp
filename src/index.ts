@@ -26,9 +26,9 @@ let dbConnected = false;
 let dbConnectionPromise: Promise<void> | null = null;
 
 // Initialize DB connection immediately
-const initializeDB = async () => {
+const initializeDB = async (): any => {
   if (!dbConnectionPromise) {
-    dbConnectionPromise = connectDB();
+    dbConnectionPromise = await connectDB();
   }
   return dbConnectionPromise;
 };
