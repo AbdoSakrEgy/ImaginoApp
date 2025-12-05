@@ -848,7 +848,6 @@ export class ImageServices implements IImageServices {
     });
   };
 
-
   // ============================ getAllImages ============================
   getAllImages = async (req: Request, res: Response, next: NextFunction): Promise<Response> => {
     const { isPublic, category, tags, page = 1, size = 20 } = req.query;
