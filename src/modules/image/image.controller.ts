@@ -10,16 +10,16 @@ const upload = multerUpload({ sendedFileDest: "tmp", storeIn: StoreInEnum.disk }
 // Hamza
 router.post("/gen-img-with-selected-background", auth, imageServices.genImgWithSelectedBackground);
 router.post("/gen-img-with-new-background", auth, imageServices.genImgWithNewBackground);
-router.post("/gen-resize-img", auth, imageServices.genResizeImg);
+router.post("/gen-resize-img", auth, multerUpload({}).single("image"), imageServices.genResizeImg);
+router.get("/get-image", auth, imageServices.getImage);
 // Abdulrahim
-router.get("/git-image/:imageId", auth, imageServices.gitImage);
 router.post("/gen-img-with-new-dimension",auth,multerUpload({}).single("image"),imageServices.genImgWithNewDimension,);
 router.post("/gen-inhanced-quality-img",auth,multerUpload({}).single("image"),imageServices.genInhancedQualityImg,);
 router.post("/gen-merge-logo-to-img",auth,multerUpload({}).array("images"),imageServices.genMergeLogoToImg,);
 // M.Ashref
 router.get("/getall", auth, imageServices.getAllImages);
 router.delete("/delete/:imageId", auth, imageServices.deleteImage);
-router.post("/gen-img-without-background",auth,upload.single("imageFile"),imageServices.genImgWithoutBackground,);
 router.post("/gen-sutiable-backgrounds", auth, imageServices.genSutiableBackgrounds);
+router.post("/gen-img-without-background",auth,upload.single("imageFile"),imageServices.genImgWithoutBackground,);
 
 export default router;
