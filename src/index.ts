@@ -21,24 +21,31 @@ let corsOptions = {
 
 app.use(express.json());
 
-// Connect DB before setting up routes
+// Connect DB immediately (before routes)
 let dbConnected = false;
+let dbConnectionPromise: Promise<void> | null = null;
 
-app.use(async (req: Request, res: Response, next: NextFunction) => {
-  if (!dbConnected) {
-    try {
-      await connectDB();
-      dbConnected = true;
-      console.log("DB connected");
-    } catch (err) {
-      console.error("DB connection failed:", err);
-      return res.status(500).json({
-        errMsg: "Database connection failed",
-        status: 500,
-      });
-    }
+// Initialize DB connection immediately
+const initializeDB = async () => {
+  if (!dbConnectionPromise) {
+    dbConnectionPromise = connectDB();
   }
-  next();
+  return dbConnectionPromise;
+};
+
+// Ensure DB is connected before any request
+app.use(async (req: Request, res: Response, next: NextFunction) => {
+  try {
+    await initializeDB();
+    dbConnected = true;
+    next();
+  } catch (err) {
+    console.error("DB connection failed:", err);
+    return res.status(500).json({
+      errMsg: "Database connection failed",
+      status: 500,
+    });
+  }
 });
 
 app.use("/api/v1", router);
