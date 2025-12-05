@@ -15,12 +15,154 @@ import { removeBackgroundFromImageBase64 } from "../../utils/ai/removeBackground
 import path from "path/win32";
 import sharp from "sharp";
 import axios from "axios";
+import {
+  generateBackgroundWithStability,
+  StabilityBackgroundOptions,
+} from "../../utils/ai/stability";
+
+type BackgroundTheme = "vehicle" | "beauty" | "fashion" | "food" | "tech" | "furniture" | "generic";
+
+const THEME_KEYWORDS: Array<{ theme: BackgroundTheme; keywords: string[] }> = [
+  {
+    theme: "vehicle",
+    keywords: [
+      "car",
+      "vehicle",
+      "automotive",
+      "auto",
+      "motorcycle",
+      "bike",
+      "truck",
+      "suv",
+      "sedan",
+      "coupe",
+      "roadster",
+      "van",
+      "convertible",
+    ],
+  },
+  {
+    theme: "beauty",
+    keywords: [
+      "skin",
+      "skincare",
+      "cosmetic",
+      "makeup",
+      "beauty",
+      "serum",
+      "cream",
+      "lotion",
+      "perfume",
+      "fragrance",
+    ],
+  },
+  {
+    theme: "fashion",
+    keywords: [
+      "shoe",
+      "sneaker",
+      "boot",
+      "bag",
+      "apparel",
+      "jacket",
+      "dress",
+      "hoodie",
+      "fashion",
+      "wear",
+    ],
+  },
+  {
+    theme: "food",
+    keywords: [
+      "food",
+      "drink",
+      "beverage",
+      "coffee",
+      "tea",
+      "snack",
+      "dessert",
+      "kitchen",
+      "plate",
+    ],
+  },
+  {
+    theme: "tech",
+    keywords: [
+      "phone",
+      "laptop",
+      "tablet",
+      "speaker",
+      "camera",
+      "tech",
+      "gadget",
+      "console",
+      "headphone",
+      "monitor",
+    ],
+  },
+  {
+    theme: "furniture",
+    keywords: ["chair", "sofa", "table", "desk", "lamp", "bed", "stool", "couch", "shelf"],
+  },
+];
+
+const BACKGROUND_THEME_PROMPTS: Record<
+  BackgroundTheme,
+  { opening: string; setting: string; details: string }
+> = {
+  vehicle: {
+    opening: "Cinematic automotive hero shot of {descriptor}",
+    setting: "positioned on a modern rooftop parking deck with moody skyline bokeh",
+    details: "wet asphalt reflections, dramatic rim lighting, no people, no signage",
+  },
+  beauty: {
+    opening: "Premium beauty campaign still of {descriptor}",
+    setting: "arranged on marble and glass vanity props with diffused daylight",
+    details: "soft pastels, floating mist, no other product categories, hyperreal textures",
+  },
+  fashion: {
+    opening: "Editorial fashion product scene for {descriptor}",
+    setting: "styled on sculpted plinths inside a minimal studio with rim-lit gradients",
+    details: "floating fabric motion, subtle shadow drop, no competing wardrobe",
+  },
+  food: {
+    opening: "Gourmet food photography of {descriptor}",
+    setting: "placed on rustic tabletop with natural window light and depth-rich props",
+    details: "steam, crumbs, utensils, no packaged cosmetics or tech",
+  },
+  tech: {
+    opening: "Futuristic tech showcase for {descriptor}",
+    setting: "on anodized aluminum surface with neon rim lighting and volumetric haze",
+    details: "floating HUD elements, bokeh particles, no organic skincare items",
+  },
+  furniture: {
+    opening: "Interior design lifestyle shot of {descriptor}",
+    setting: "inside a curated living space with layered lighting and tactile materials",
+    details: "area rug shadows, architectural light streaks, no unrelated cosmetics",
+  },
+  generic: {
+    opening: "Lifestyle hero scene for {descriptor}",
+    setting: "set on a premium stylized stage with cinematic depth",
+    details: "soft studio lighting, DSLR depth of field, practical props that support the product",
+  },
+};
+
+const THEME_NEGATIVE_PROMPTS: Partial<Record<BackgroundTheme, string>> = {
+  vehicle: "skincare, cosmetics, perfume, makeup, hands, people, signage, text overlay",
+  beauty: "cars, vehicles, engines, asphalt, tires, industrial machinery",
+  fashion: "cars, vehicles, crowded streets, skincare jars, phones, laptops",
+  food: "cars, people, hands, skincare, laptops, text",
+  tech: "cars, food, skin, people, clutter, wrinkles",
+  furniture: "cars, food, faces, text overlay, clutter, crowd",
+  generic: "logos, text overlay, people, mismatched merchandise, clutter",
+};
 
 export class ImageServices implements IImageServices {
   private imageModel = ImageModel;
 
   constructor() {}
 
+  // ============================ Utility functions for the service ============================
   private parseBooleanFlag(value: unknown, defaultValue: boolean): boolean {
     if (typeof value === "undefined" || value === null) return defaultValue;
     if (typeof value === "boolean") return value;
@@ -75,6 +217,113 @@ export class ImageServices implements IImageServices {
   private async downloadImageAsBuffer(url: string): Promise<Buffer> {
     const response = await axios.get(url, { responseType: "arraybuffer" });
     return Buffer.from(response.data);
+  }
+
+  private detectBackgroundTheme(image: Partial<IImage>): BackgroundTheme {
+    const textParts: string[] = [];
+    if (image.title) textParts.push(image.title);
+    if (image.description) textParts.push(image.description);
+    if (image.category) textParts.push(image.category);
+    if (Array.isArray(image.tags)) textParts.push(...image.tags);
+    const normalized = textParts.join(" ").toLowerCase();
+
+    for (const matcher of THEME_KEYWORDS) {
+      if (matcher.keywords.some((keyword) => normalized.includes(keyword))) {
+        return matcher.theme;
+      }
+    }
+
+    if (
+      image.category === "product" ||
+      image.category === "art" ||
+      image.category === "landscape"
+    ) {
+      return "generic";
+    }
+
+    return "generic";
+  }
+
+  private buildBackgroundPrompt(
+    image: Partial<IImage>,
+    userPrompt?: string,
+  ): { prompt: string; theme: BackgroundTheme; source: "user" | "auto" } {
+    const theme = this.detectBackgroundTheme(image);
+    if (userPrompt && userPrompt.trim()) {
+      return { prompt: userPrompt.trim(), theme, source: "user" };
+    }
+
+    const descriptorSources: string[] = [];
+    if (image.title) descriptorSources.push(image.title);
+    if (Array.isArray(image.tags) && image.tags.length) {
+      descriptorSources.push(image.tags.slice(0, 3).join(" "));
+    }
+    if (!descriptorSources.length && image.description) {
+      descriptorSources.push(image.description.split(" ").slice(0, 6).join(" "));
+    }
+
+    const descriptor = descriptorSources.join(" ").trim() || "product";
+    const template = BACKGROUND_THEME_PROMPTS[theme] || BACKGROUND_THEME_PROMPTS.generic;
+    const replaceDescriptor = (value: string) => value.replace("{descriptor}", descriptor);
+    const prompt = [template.opening, template.setting, template.details]
+      .map(replaceDescriptor)
+      .filter(Boolean)
+      .join(". ");
+
+    return { prompt, theme, source: "auto" };
+  }
+
+  private buildDefaultNegativePrompt(theme: BackgroundTheme): string | undefined {
+    return THEME_NEGATIVE_PROMPTS[theme] || THEME_NEGATIVE_PROMPTS.generic;
+  }
+
+  private calculateProductPlacement(options: {
+    backgroundWidth: number;
+    backgroundHeight: number;
+    productWidth: number;
+    productHeight: number;
+    theme: BackgroundTheme;
+  }): { mode: "center" | "custom"; left: number; top: number } {
+    const { backgroundWidth, backgroundHeight, productWidth, productHeight, theme } = options;
+    const marginX = Math.round(backgroundWidth * 0.04);
+    const marginY = Math.round(backgroundHeight * 0.06);
+    const centerLeft = Math.round((backgroundWidth - productWidth) / 2);
+    const centerTop = Math.round((backgroundHeight - productHeight) / 2);
+    let left = centerLeft;
+    let top = centerTop;
+    let mode: "center" | "custom" = "center";
+
+    const productRatio = productWidth / Math.max(productHeight, 1);
+    const shouldGroundProduct =
+      theme === "vehicle" || theme === "fashion" || theme === "furniture" || theme === "food";
+
+    if (shouldGroundProduct) {
+      top = Math.max(marginY, backgroundHeight - productHeight - marginY);
+      mode = "custom";
+    }
+
+    if (productRatio < 0.9) {
+      left = Math.round(backgroundWidth * 0.58 - productWidth / 2);
+      mode = "custom";
+    } else if (productRatio > 1.4 && theme === "vehicle") {
+      left = Math.round(backgroundWidth * 0.5 - productWidth / 2);
+      mode = "custom";
+    }
+
+    const clamp = (value: number, min: number, max: number) => {
+      if (Number.isNaN(value)) return min;
+      if (max <= min) return min;
+      return Math.min(Math.max(value, min), max);
+    };
+
+    left = clamp(left, marginX, backgroundWidth - productWidth - marginX);
+    top = clamp(top, marginY, backgroundHeight - productHeight - marginY);
+
+    if (Math.abs(left - centerLeft) < 8 && Math.abs(top - centerTop) < 8) {
+      mode = "center";
+    }
+
+    return { mode, left, top };
   }
   // ============================ get Single Image ============================
   getImage = async (req: Request, res: Response, next: NextFunction): Promise<Response> => {
@@ -166,6 +415,13 @@ export class ImageServices implements IImageServices {
       result,
     });
   };
+  // ============================ getImage ============================
+  gitImage = async (req: Request, res: Response, next: NextFunction): Promise<Response> => {
+    const user = res.locals.user;
+    const { imageId } = req.params;
+    const image = await this.imageModel.findById(imageId);
+    return successHandler({ res, result: { image } });
+  };
 
   // ============================ genSutiableBackgrounds ============================
   genSutiableBackgrounds = async (
@@ -191,7 +447,273 @@ export class ImageServices implements IImageServices {
     res: Response,
     next: NextFunction,
   ): Promise<Response> => {
-    return successHandler({ res });
+    const user = res.locals.user;
+    if (!user?._id) {
+      throw new ApplicationException("User not authenticated", 401);
+    }
+
+    const bodyPayload = req.body || {};
+    // const coerceSingle = (value: unknown) => (Array.isArray(value) ? value[0] : value);
+
+    const imageId = bodyPayload.imageId as string | undefined;
+    console.log("imageId:", imageId);
+    const prompt = bodyPayload.prompt as string | undefined;
+    const negativePrompt = bodyPayload.negativePrompt as string | undefined;
+    const stylePreset = bodyPayload.stylePreset as string | undefined;
+    const seedValue = bodyPayload.seed;
+    const widthValue = bodyPayload.width;
+    const heightValue = bodyPayload.height;
+
+    if (!imageId || !mongoose.Types.ObjectId.isValid(imageId)) {
+      throw new ApplicationException("Valid imageId is required", 400);
+    }
+
+    const existingImage = await this.imageModel.findOne({
+      _id: new mongoose.Types.ObjectId(imageId),
+      user: new mongoose.Types.ObjectId(user._id),
+      deletedAt: null,
+    });
+
+    if (!existingImage) {
+      throw new ApplicationException("Image not found", 404);
+    }
+
+    const promptSourceImage =
+      typeof (existingImage as any).toObject === "function"
+        ? ((existingImage as any).toObject() as Partial<IImage>)
+        : (existingImage as unknown as Partial<IImage>) || {};
+
+    const {
+      prompt: resolvedPrompt,
+      theme: derivedTheme,
+      source: promptSourceType,
+    } = this.buildBackgroundPrompt(promptSourceImage, prompt);
+
+    const resolvedNegativePrompt =
+      negativePrompt && negativePrompt.trim()
+        ? negativePrompt.trim()
+        : this.buildDefaultNegativePrompt(derivedTheme);
+
+    const sourceBuffer = await this.downloadImageAsBuffer(existingImage.url);
+    const sourceMetadata = await sharp(sourceBuffer).metadata();
+
+    const parseDimension = (value: unknown, fallback: number) => {
+      if (typeof value === "undefined" || value === null || value === "") {
+        return fallback;
+      }
+      const parsed = Number(value);
+      if (Number.isNaN(parsed) || parsed <= 0) {
+        throw new ApplicationException("width/height must be positive numbers", 400);
+      }
+      return parsed;
+    };
+
+    const allowedTextToImageDimensions = [
+      { width: 1024, height: 1024 },
+      { width: 1152, height: 896 },
+      { width: 1216, height: 832 },
+      { width: 1344, height: 768 },
+      { width: 1536, height: 640 },
+      { width: 640, height: 1536 },
+      { width: 768, height: 1344 },
+      { width: 832, height: 1216 },
+      { width: 896, height: 1152 },
+    ];
+
+    const normalizeForStability = (width: number, height: number) => {
+      if (!Number.isFinite(width) || width <= 0 || !Number.isFinite(height) || height <= 0) {
+        return { width: 1024, height: 1024 };
+      }
+
+      const requestedRatio = width / height;
+      if (!allowedTextToImageDimensions.length) {
+        return { width: 1024, height: 1024 };
+      }
+
+      let best: { width: number; height: number } = { width: 1024, height: 1024 };
+      let bestScore = Number.POSITIVE_INFINITY;
+
+      for (const option of allowedTextToImageDimensions) {
+        const optionRatio = option.width / option.height;
+        const ratioDiff = Math.abs(optionRatio - requestedRatio);
+        const widthDiff = Math.abs(option.width - width) / option.width;
+        const heightDiff = Math.abs(option.height - height) / option.height;
+        const orientationPenalty =
+          requestedRatio > 1 && option.width < option.height
+            ? 0.25
+            : requestedRatio < 1 && option.width > option.height
+              ? 0.25
+              : 0;
+        const score = ratioDiff * 2 + widthDiff + heightDiff + orientationPenalty;
+
+        if (score < bestScore) {
+          bestScore = score;
+          best = option;
+        }
+      }
+
+      return best;
+    };
+
+    const fallbackWidth = sourceMetadata.width || 1024;
+    const fallbackHeight = sourceMetadata.height || fallbackWidth || 1024;
+    const targetWidth = parseDimension(widthValue, fallbackWidth);
+    const targetHeight = parseDimension(heightValue, fallbackHeight);
+    const { width: stabilityWidth, height: stabilityHeight } = normalizeForStability(
+      targetWidth,
+      targetHeight,
+    );
+
+    const numericSeed =
+      typeof seedValue !== "undefined" && seedValue !== "" ? Number(seedValue) : undefined;
+    const parsedSeed =
+      typeof numericSeed === "number" && !Number.isNaN(numericSeed) ? numericSeed : undefined;
+
+    const stabilityStartTime = Date.now();
+    const stabilityOptions: StabilityBackgroundOptions = {
+      productImageBuffer: sourceBuffer,
+      width: stabilityWidth,
+      height: stabilityHeight,
+      prompt: resolvedPrompt,
+    };
+
+    if (resolvedNegativePrompt) {
+      stabilityOptions.negativePrompt = resolvedNegativePrompt;
+    }
+    if (stylePreset && stylePreset.trim()) {
+      stabilityOptions.stylePreset = stylePreset.trim();
+    }
+    if (typeof parsedSeed !== "undefined") {
+      stabilityOptions.seed = parsedSeed;
+    }
+
+    const backgroundBuffer = await generateBackgroundWithStability(stabilityOptions);
+
+    const resizedProductBuffer = await sharp(sourceBuffer)
+      .resize({
+        width: Math.min(stabilityWidth, sourceMetadata.width || stabilityWidth),
+        height: Math.min(stabilityHeight, sourceMetadata.height || stabilityHeight),
+        fit: "inside",
+        withoutEnlargement: true,
+      })
+      .png()
+      .toBuffer();
+
+    const resizedProductMetadata = await sharp(resizedProductBuffer).metadata();
+
+    const productPlacement = this.calculateProductPlacement({
+      backgroundWidth: stabilityWidth,
+      backgroundHeight: stabilityHeight,
+      productWidth:
+        resizedProductMetadata.width ||
+        Math.min(stabilityWidth, sourceMetadata.width || stabilityWidth),
+      productHeight:
+        resizedProductMetadata.height ||
+        Math.min(stabilityHeight, sourceMetadata.height || stabilityHeight),
+      theme: derivedTheme,
+    });
+
+    const overlayOptions: sharp.OverlayOptions =
+      productPlacement.mode === "custom"
+        ? {
+            input: resizedProductBuffer,
+            left: productPlacement.left,
+            top: productPlacement.top,
+          }
+        : {
+            input: resizedProductBuffer,
+            gravity: "center",
+          };
+
+    const compositedBuffer = await sharp(backgroundBuffer)
+      .resize({ width: stabilityWidth, height: stabilityHeight, fit: "cover" })
+      .composite([overlayOptions])
+      .png()
+      .toBuffer();
+
+    const tmpDir = this.ensureTmpDirectory("new-background");
+    const finalFilename = `${existingImage.filename || "image"}-bg-${Date.now()}.png`;
+    const tempFilePath = path.join(tmpDir, finalFilename);
+    fs.writeFileSync(tempFilePath, compositedBuffer);
+
+    const { public_id, secure_url } = await uploadSingleFile({
+      fileLocation: tempFilePath,
+      storagePathOnCloudinary: `ImaginoApp/genImgWithNewBackground/${user._id}`,
+    });
+
+    const generatedImage = await this.imageModel.create({
+      user: user._id,
+      url: secure_url,
+      storageKey: public_id,
+      filename: finalFilename,
+      originalFilename: `${existingImage.originalFilename || existingImage.filename}-bg.png`,
+      mimeType: "image/png",
+      size: compositedBuffer.length,
+      parentId: existingImage._id,
+      children: [],
+      isOriginal: false,
+      version: (existingImage.version || 1) + 1,
+      aiEdits: [
+        {
+          operation: "image-to-image" as const,
+          provider: "stability-ai" as const,
+          ...(resolvedPrompt ? { prompt: resolvedPrompt } : {}),
+          parameters: {
+            ...(stylePreset && stylePreset.trim() ? { stylePreset: stylePreset.trim() } : {}),
+            width: stabilityWidth,
+            height: stabilityHeight,
+            ...(typeof parsedSeed !== "undefined" ? { seed: parsedSeed } : {}),
+            ...(resolvedNegativePrompt ? { negativePrompt: resolvedNegativePrompt } : {}),
+            promptSource: promptSourceType,
+            theme: derivedTheme,
+            placementMode: productPlacement.mode,
+            ...(productPlacement.mode === "custom"
+              ? { placementOffsets: { left: productPlacement.left, top: productPlacement.top } }
+              : {}),
+          },
+          timestamp: new Date(),
+          processingTime: Date.now() - stabilityStartTime,
+        },
+      ],
+      status: "completed" as const,
+      tags: [
+        "genImgWithNewBackground",
+        derivedTheme,
+        ...(stylePreset ? [stylePreset] : []),
+        ...(promptSourceType === "user" ? ["custom-prompt"] : ["auto-prompt"]),
+      ],
+      title:
+        existingImage.title ||
+        `${existingImage.filename} - ${derivedTheme.replace(/-/g, " ")} background`,
+      description:
+        prompt?.trim() ||
+        `AI generated ${derivedTheme} background composed with Stability AI using prompt: ${resolvedPrompt}`,
+      category: existingImage.category || "product",
+      isPublic: false,
+      views: 0,
+      downloads: 0,
+      dimensions: {
+        width: stabilityWidth,
+        height: stabilityHeight,
+      },
+    });
+
+    await this.imageModel.findByIdAndUpdate(existingImage._id, {
+      $addToSet: { children: generatedImage._id },
+    });
+
+    if (fs.existsSync(tempFilePath)) {
+      fs.unlinkSync(tempFilePath);
+    }
+
+    return successHandler({
+      res,
+      message: "Background generated successfully",
+      result: {
+        transparentImage: this.serializeImageDoc(existingImage),
+        generatedImage: this.serializeImageDoc(generatedImage),
+      },
+    });
   };
 
   // ============================ genResizeImg ============================
@@ -846,14 +1368,6 @@ export class ImageServices implements IImageServices {
         message: "Images merged successfully",
       },
     });
-  };
-
-  // ============================ gitImage ============================
-  gitImage = async (req: Request, res: Response, next: NextFunction): Promise<Response> => {
-    const user = res.locals.user;
-    const { imageId } = req.params;
-    const image = await this.imageModel.findById(imageId);
-    return successHandler({ res, result: { image } });
   };
 
   // ============================ getAllImages ============================
