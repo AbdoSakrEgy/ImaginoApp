@@ -51,5 +51,7 @@ router.post(
   userServices.payWithStripe
 );
 router.post("/web-hook-with-stripe", userServices.webHookWithStripe);
+router.get("/images", auth, userServices.getUserImages);
+
 
 export default router;

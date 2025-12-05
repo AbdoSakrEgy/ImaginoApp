@@ -20,11 +20,18 @@ router.delete("/delete/:imageId", auth, imageServices.deleteImage);
 
 router.post(
     "/gen-img-without-background",
-    
+
     auth,
     upload.single("imageFile"),
     imageServices.uploadImageWithoutBackground
 );
+
+router.post(
+    "/generate-suitable-bg/:imageId",
+    auth,
+    imageServices.generateSuitableBackgroundsFromImage
+);
+
 
 
 

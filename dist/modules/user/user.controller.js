@@ -17,4 +17,5 @@ router.delete("/delete-profile-image", auth_middleware_1.auth, userServices.dele
 router.patch("/update-basic-info", auth_middleware_1.auth, (0, validation_middleware_1.validation)(user_validation_1.updateBasicInfoSchema), userServices.updateBasicInfo);
 router.post("/pay-with-stripe", auth_middleware_1.auth, (0, validation_middleware_1.validation)(user_validation_1.payWithStripeSchema), userServices.payWithStripe);
 router.post("/web-hook-with-stripe", userServices.webHookWithStripe);
+router.get("/images", auth_middleware_1.auth, userServices.getUserImages);
 exports.default = router;

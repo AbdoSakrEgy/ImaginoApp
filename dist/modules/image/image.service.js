@@ -12,7 +12,9 @@ const pagination_1 = require("../../utils/pagination");
 const cloudinary_service_1 = require("../../utils/cloudinary/cloudinary.service");
 const mongoose_1 = __importDefault(require("mongoose"));
 const removeBackground_1 = require("../../utils/ai/removeBackground");
-const win32_1 = __importDefault(require("path/win32"));
+const path_1 = __importDefault(require("path"));
+const axios_1 = __importDefault(require("axios"));
+const node_fetch_1 = __importDefault(require("node-fetch"));
 class ImageServices {
     constructor() { }
     getAllImages = async (req, res, next) => {
@@ -124,7 +126,7 @@ class ImageServices {
             throw new Errors_1.ApplicationException("User not authenticated", 401);
         if (!req.file)
             throw new Errors_1.ApplicationException("No image uploaded", 400);
-        const tmpFolder = win32_1.default.join(__dirname, "../../tmp");
+        const tmpFolder = path_1.default.join(__dirname, "../../tmp");
         if (!fs_1.default.existsSync(tmpFolder))
             fs_1.default.mkdirSync(tmpFolder, { recursive: true });
         const fileBuffer = fs_1.default.readFileSync(req.file.path);
@@ -132,7 +134,7 @@ class ImageServices {
         const resultBase64 = await (0, removeBackground_1.removeBackgroundFromImageBase64)({
             imageBase64: base64Image,
         });
-        const tmpFilePath = win32_1.default.join(tmpFolder, `no-bg-${Date.now()}.png`);
+        const tmpFilePath = path_1.default.join(tmpFolder, `no-bg-${Date.now()}.png`);
         fs_1.default.writeFileSync(tmpFilePath, Buffer.from(resultBase64, "base64"));
         const projectFolder = process.env.PROJECT_FOLDER || "DefaultProjectFolder";
         const { public_id, secure_url } = await (0, cloudinary_service_1.uploadSingleFile)({
@@ -171,6 +173,92 @@ class ImageServices {
                 storageKey: newImage.storageKey,
                 aiEdits: newImage.aiEdits,
             },
+        });
+    };
+    generateSuitableBackgroundsFromImage = async (req, res, next) => {
+        const userId = res.locals.user?._id?.toString();
+        if (!userId)
+            throw new Errors_1.ApplicationException("User not authenticated", 401);
+        const { imageId } = req.params;
+        if (!imageId || !mongoose_1.default.Types.ObjectId.isValid(imageId))
+            throw new Errors_1.ApplicationException("Invalid image ID", 400);
+        // جلب الصورة من DB
+        const image = await image_model_1.ImageModel.findOne({
+            _id: new mongoose_1.default.Types.ObjectId(imageId),
+            user: new mongoose_1.default.Types.ObjectId(userId),
+            deletedAt: null,
+        });
+        if (!image)
+            throw new Errors_1.ApplicationException("Image not found", 404);
+        const tmpFolder = path_1.default.join(__dirname, "../../tmp");
+        if (!fs_1.default.existsSync(tmpFolder))
+            fs_1.default.mkdirSync(tmpFolder, { recursive: true });
+        // حفظ الصورة مؤقتًا
+        const tmpImagePath = path_1.default.join(tmpFolder, `input-${Date.now()}.png`);
+        const response = await (0, node_fetch_1.default)(image.url);
+        const arrayBuffer = await response.arrayBuffer();
+        fs_1.default.writeFileSync(tmpImagePath, Buffer.from(arrayBuffer));
+        // إعداد Replicate API
+        if (!process.env.REPLICATE_API_KEY)
+            throw new Errors_1.ApplicationException("REPLICATE_API_KEY missing", 500);
+        const replicateResponse = await axios_1.default.post("https://api.replicate.com/v1/predictions", {
+            version: "a9758c6e0e16d6a8c3f8480c7b2c4f4c9f0c0a9e0f3b6c0a4d1e5c6b7d8f9a0b", // مثال على Stable Diffusion model
+            input: {
+                image: fs_1.default.createReadStream(tmpImagePath),
+                prompt: "Generate a clean, studio-style background suitable for product showcase",
+                num_outputs: 4,
+            },
+        }, {
+            headers: {
+                Authorization: `Token ${process.env.REPLICATE_API_KEY}`,
+                "Content-Type": "application/json",
+            },
+        });
+        const outputs = replicateResponse.data?.output || [];
+        const savedImages = [];
+        const projectFolder = process.env.PROJECT_FOLDER || "DefaultProjectFolder";
+        for (const base64 of outputs) {
+            const tmpOutputPath = path_1.default.join(tmpFolder, `bg-${Date.now()}-${Math.random()}.png`);
+            fs_1.default.writeFileSync(tmpOutputPath, Buffer.from(base64, "base64"));
+            const { public_id, secure_url } = await (0, cloudinary_service_1.uploadSingleFile)({
+                fileLocation: tmpOutputPath,
+                storagePathOnCloudinary: `${projectFolder}/${userId}/replicate-bg`,
+            });
+            const newImage = await image_model_1.ImageModel.create({
+                user: new mongoose_1.default.Types.ObjectId(userId),
+                url: secure_url,
+                storageKey: public_id,
+                filename: "generated-background.png",
+                mimeType: "image/png",
+                size: Buffer.from(base64, "base64").length,
+                dimensions: { width: 0, height: 0 },
+                status: "completed",
+                isPublic: false,
+                aiEdits: [
+                    {
+                        operation: "custom",
+                        provider: "replicate",
+                        prompt: "Generated suitable background for product",
+                        parameters: { count: 4 },
+                        timestamp: new Date(),
+                        processingTime: 0,
+                        cost: 0,
+                    },
+                ],
+            });
+            savedImages.push({
+                _id: newImage._id,
+                url: newImage.url,
+                storageKey: newImage.storageKey,
+                aiEdits: newImage.aiEdits,
+            });
+            fs_1.default.unlinkSync(tmpOutputPath);
+        }
+        fs_1.default.unlinkSync(tmpImagePath);
+        return (0, successHandler_1.successHandler)({
+            res,
+            message: "Generated suitable backgrounds successfully (Replicate)",
+            result: savedImages,
         });
     };
 }

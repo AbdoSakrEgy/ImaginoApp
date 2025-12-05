@@ -12,11 +12,13 @@ import {
   createCheckoutSession,
   createCoupon,
 } from "../../utils/stripe/stripe.service";
+import { ImageModel } from "../image/image.model";
+import mongoose from "mongoose";
 
 export class UserServices implements IUserServices {
   private userModel = UserModel;
 
-  constructor() {}
+  constructor() { }
   // ============================ userProfile ============================
   userProfile = async (
     req: Request,
@@ -216,4 +218,37 @@ export class UserServices implements IUserServices {
     if (!user) throw new ApplicationException("User not found", 404);
     return successHandler({ res, message: "webHookWithStripe done" });
   };
+
+  getUserImages = async (
+    req: Request,
+    res: Response,
+    next: NextFunction
+  ): Promise<Response> => {
+    const userId = res.locals.user?._id?.toString();
+    if (!userId) throw new ApplicationException("User not authenticated", 401);
+
+    // جلب كل الصور الخاصة بالمستخدم والتي لم يتم حذفها
+    const images = await ImageModel.find({
+      user: new mongoose.Types.ObjectId(userId),
+      deletedAt: null,
+    });
+
+    return successHandler({
+      res,
+      message: "User images fetched successfully",
+      result: images.map(image => ({
+        _id: image._id,
+        url: image.url,
+        storageKey: image.storageKey,
+        filename: image.filename,
+        mimeType: image.mimeType,
+        size: image.size,
+        dimensions: image.dimensions,
+        status: image.status,
+        isPublic: image.isPublic,
+        aiEdits: image.aiEdits,
+      })),
+    });
+  };
+
 }

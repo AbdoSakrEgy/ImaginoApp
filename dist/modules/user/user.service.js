@@ -1,4 +1,7 @@
 "use strict";
+var __importDefault = (this && this.__importDefault) || function (mod) {
+    return (mod && mod.__esModule) ? mod : { "default": mod };
+};
 Object.defineProperty(exports, "__esModule", { value: true });
 exports.UserServices = void 0;
 const user_model_1 = require("./user.model");
@@ -7,6 +10,8 @@ const Errors_1 = require("../../utils/Errors");
 const user_module_types_1 = require("../../types/user.module.types");
 const cloudinary_service_1 = require("../../utils/cloudinary/cloudinary.service");
 const stripe_service_1 = require("../../utils/stripe/stripe.service");
+const image_model_1 = require("../image/image.model");
+const mongoose_1 = __importDefault(require("mongoose"));
 class UserServices {
     userModel = user_model_1.UserModel;
     constructor() { }
@@ -156,6 +161,32 @@ class UserServices {
         if (!user)
             throw new Errors_1.ApplicationException("User not found", 404);
         return (0, successHandler_1.successHandler)({ res, message: "webHookWithStripe done" });
+    };
+    getUserImages = async (req, res, next) => {
+        const userId = res.locals.user?._id?.toString();
+        if (!userId)
+            throw new Errors_1.ApplicationException("User not authenticated", 401);
+        // جلب كل الصور الخاصة بالمستخدم والتي لم يتم حذفها
+        const images = await image_model_1.ImageModel.find({
+            user: new mongoose_1.default.Types.ObjectId(userId),
+            deletedAt: null,
+        });
+        return (0, successHandler_1.successHandler)({
+            res,
+            message: "User images fetched successfully",
+            result: images.map(image => ({
+                _id: image._id,
+                url: image.url,
+                storageKey: image.storageKey,
+                filename: image.filename,
+                mimeType: image.mimeType,
+                size: image.size,
+                dimensions: image.dimensions,
+                status: image.status,
+                isPublic: image.isPublic,
+                aiEdits: image.aiEdits,
+            })),
+        });
     };
 }
 exports.UserServices = UserServices;

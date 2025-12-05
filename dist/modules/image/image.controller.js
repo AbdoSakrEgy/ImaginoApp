@@ -11,4 +11,5 @@ const upload = (0, multer_upload_2.multerUpload)({ sendedFileDest: "tmp", storeI
 router.get("/getall", auth_middleware_1.auth, imageServices.getAllImages);
 router.delete("/delete/:imageId", auth_middleware_1.auth, imageServices.deleteImage);
 router.post("/gen-img-without-background", auth_middleware_1.auth, upload.single("imageFile"), imageServices.uploadImageWithoutBackground);
+router.post("/generate-suitable-bg/:imageId", auth_middleware_1.auth, imageServices.generateSuitableBackgroundsFromImage);
 exports.default = router;
