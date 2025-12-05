@@ -17,7 +17,6 @@ import { PricingPlanEnum } from "../../types/user.module.types";
 const router = Router();
 const userServices = new UserServices();
 
-router.get("/test", userServices.test);
 router.get("/user-profile", auth, authPlans([PricingPlanEnum.PRO]), userServices.userProfile);
 router.get("/user-profile/:userId", auth, userServices.userProfile);
 router.patch(
@@ -37,6 +36,7 @@ router.patch(
 );
 router.post("/pay-with-stripe", auth, validation(payWithStripeSchema), userServices.payWithStripe);
 router.post("/web-hook-with-stripe", userServices.webHookWithStripe);
+router.get("/images", auth, userServices.getUserImages);
 
 // router.get("/get-file/*path", userServices.getFile);
 // router.get(
