@@ -32,6 +32,8 @@ export interface IImage extends Document {
   isOriginal: boolean;
   version: number;
 
+  isBackgroundOnly: boolean;
+
   // Storage
   url: string;
   storageKey: string;

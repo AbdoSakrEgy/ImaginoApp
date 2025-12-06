@@ -32,6 +32,36 @@ import {
 import { generateProductPromptFromImage } from "../../utils/ai/productPromptGenerator";
 import { uploadBufferFile } from "../../utils/cloudinary/cloudinaryBuffer.service";
 
+type NegativePromptSource = "user" | "vision" | "auto";
+
+interface PrepareBackgroundContextOptions {
+  existingImage: IImage;
+  prompt?: string;
+  negativePrompt?: string;
+  widthValue?: unknown;
+  heightValue?: unknown;
+  seedValue?: unknown;
+}
+
+interface PreparedBackgroundContext {
+  resolvedPrompt: string;
+  resolvedNegativePrompt?: string;
+  promptSourceType: BackgroundPromptSource;
+  negativePromptSource?: NegativePromptSource;
+  derivedTheme: BackgroundTheme;
+  sourceBuffer: Buffer;
+  sourceMetadata: sharp.Metadata;
+  stabilityWidth: number;
+  stabilityHeight: number;
+  parsedSeed?: number;
+  metadataSummary: string;
+  visionSummary?: string;
+  visionAttributes?: string[];
+  visionBackgroundIdeas?: string[];
+  visionSizeHint?: string;
+  visionPositionHint?: string;
+}
+
 export class ImageServices implements IImageServices {
   private imageModel = ImageModel;
 
@@ -108,6 +138,254 @@ export class ImageServices implements IImageServices {
   private async downloadImageAsBuffer(url: string): Promise<Buffer> {
     const response = await axios.get(url, { responseType: "arraybuffer" });
     return Buffer.from(response.data);
+  }
+
+  private async prepareBackgroundGenerationContext(
+    options: PrepareBackgroundContextOptions,
+  ): Promise<PreparedBackgroundContext> {
+    const { existingImage, prompt, negativePrompt, widthValue, heightValue, seedValue } = options;
+
+    const promptSourceImage =
+      typeof (existingImage as any).toObject === "function"
+        ? ((existingImage as any).toObject() as Partial<IImage>)
+        : (existingImage as unknown as Partial<IImage>) || {};
+
+    const fallbackPromptPlan = buildBackgroundPrompt(promptSourceImage, prompt);
+    let resolvedPrompt = fallbackPromptPlan.prompt;
+    const derivedTheme: BackgroundTheme = fallbackPromptPlan.theme;
+    let promptSourceType: BackgroundPromptSource = fallbackPromptPlan.source;
+
+    let resolvedNegativePrompt =
+      negativePrompt && negativePrompt.trim()
+        ? negativePrompt.trim()
+        : buildDefaultNegativePrompt(derivedTheme);
+
+    const sourceBuffer = await this.downloadImageAsBuffer(existingImage.url);
+    const sourceMetadata = await sharp(sourceBuffer).metadata();
+
+    const metadataSummaryParts: string[] = [];
+    if (existingImage.title) metadataSummaryParts.push(`Title: ${existingImage.title}`);
+    if (existingImage.description)
+      metadataSummaryParts.push(`Description: ${existingImage.description}`);
+    if (existingImage.category) metadataSummaryParts.push(`Category: ${existingImage.category}`);
+    if (Array.isArray(existingImage.tags) && existingImage.tags.length) {
+      metadataSummaryParts.push(`Tags: ${existingImage.tags.slice(0, 8).join(", ")}`);
+    }
+    metadataSummaryParts.push(
+      `Theme guess: ${derivedTheme} | Dimensions: ${sourceMetadata.width || "?"}x${sourceMetadata.height || "?"}`,
+    );
+    const metadataSummary = metadataSummaryParts.join(" | ");
+
+    const productAnalysis = await generateProductPromptFromImage({
+      imageBuffer: sourceBuffer,
+      mimeType: existingImage.mimeType,
+      metadataText: metadataSummary,
+      userPrompt: prompt,
+    });
+
+    const emptyStagingRequirement =
+      "Reserve a clean, unobstructed staging pocket that matches the product's perspective and lighting; never place placeholder hero objects or text in that space.";
+
+    let visionSummary: string | undefined;
+    let visionAttributes: string[] | undefined;
+    let visionBackgroundIdeas: string[] | undefined;
+    let visionSizeHint: string | undefined;
+    let visionPositionHint: string | undefined;
+    let negativePromptSource: NegativePromptSource | undefined =
+      negativePrompt && negativePrompt.trim()
+        ? "user"
+        : resolvedNegativePrompt
+          ? "auto"
+          : undefined;
+    let appendedEmptyPocketClause = false;
+
+    if (productAnalysis) {
+      const combinedPromptParts: string[] = [];
+      if (prompt && prompt.trim()) combinedPromptParts.push(prompt.trim());
+      if (productAnalysis.prompt && productAnalysis.prompt.trim()) {
+        combinedPromptParts.push(productAnalysis.prompt.trim());
+      }
+      if (!combinedPromptParts.length && resolvedPrompt) {
+        combinedPromptParts.push(resolvedPrompt);
+      }
+      const combinedPrompt = combinedPromptParts.join("\n\n").trim();
+      if (combinedPrompt) {
+        resolvedPrompt = combinedPrompt;
+        promptSourceType = prompt && prompt.trim() ? "user+vision" : "vision-auto";
+      }
+
+      if (!negativePrompt || !negativePrompt.trim()) {
+        const visionNegative = productAnalysis.negativePrompt?.trim();
+        if (visionNegative) {
+          resolvedNegativePrompt = visionNegative;
+          negativePromptSource = "vision";
+        } else if (!resolvedNegativePrompt) {
+          resolvedNegativePrompt = buildDefaultNegativePrompt(derivedTheme);
+          negativePromptSource = resolvedNegativePrompt ? "auto" : undefined;
+        }
+      }
+
+      visionSummary = productAnalysis.summary?.trim() || undefined;
+      visionAttributes = Array.isArray(productAnalysis.attributes)
+        ? productAnalysis.attributes.filter((attr) => typeof attr === "string" && attr.trim())
+        : undefined;
+      if (visionAttributes) {
+        visionAttributes = visionAttributes.map((attr) => attr.trim());
+      }
+      visionBackgroundIdeas = Array.isArray(productAnalysis.backgroundIdeas)
+        ? productAnalysis.backgroundIdeas.filter((idea) => typeof idea === "string" && idea.trim())
+        : undefined;
+      if (visionBackgroundIdeas) {
+        visionBackgroundIdeas = visionBackgroundIdeas.map((idea) => idea.trim());
+      }
+
+      visionSizeHint = productAnalysis.sizeHint?.trim() || undefined;
+      visionPositionHint = productAnalysis.positionHint?.trim() || undefined;
+
+      const placementGuidanceParts: string[] = [emptyStagingRequirement];
+      if (visionSizeHint) placementGuidanceParts.push(`Product scale guidance: ${visionSizeHint}`);
+      if (visionPositionHint)
+        placementGuidanceParts.push(`Product placement guidance: ${visionPositionHint}`);
+
+      if (
+        placementGuidanceParts.length &&
+        !/foreground placement guidance:/i.test(resolvedPrompt)
+      ) {
+        resolvedPrompt = `${resolvedPrompt}\n\nForeground placement guidance: ${placementGuidanceParts.join(
+          " | ",
+        )}. Align props, camera perspective, and horizon lines so the product feels naturally integrated.`;
+        appendedEmptyPocketClause = true;
+      }
+
+      if (!negativePromptSource) {
+        negativePromptSource = negativePrompt && negativePrompt.trim() ? "user" : undefined;
+      }
+    }
+
+    if (!appendedEmptyPocketClause && !/product staging requirement:/i.test(resolvedPrompt)) {
+      resolvedPrompt = `${resolvedPrompt}\n\nProduct staging requirement: ${emptyStagingRequirement}`;
+    }
+
+    if (!negativePromptSource) {
+      negativePromptSource =
+        negativePrompt && negativePrompt.trim()
+          ? "user"
+          : productAnalysis?.negativePrompt
+            ? "vision"
+            : resolvedNegativePrompt
+              ? "auto"
+              : undefined;
+    }
+
+    const parseDimension = (value: unknown, fallback: number) => {
+      if (typeof value === "undefined" || value === null || value === "") {
+        return fallback;
+      }
+      const parsed = Number(value);
+      if (Number.isNaN(parsed) || parsed <= 0) {
+        throw new ApplicationException("width/height must be positive numbers", 400);
+      }
+      return parsed;
+    };
+
+    const allowedTextToImageDimensions = [
+      { width: 1024, height: 1024 },
+      { width: 1152, height: 896 },
+      { width: 1216, height: 832 },
+      { width: 1344, height: 768 },
+      { width: 1536, height: 640 },
+      { width: 640, height: 1536 },
+      { width: 768, height: 1344 },
+      { width: 832, height: 1216 },
+      { width: 896, height: 1152 },
+    ];
+
+    const normalizeForStability = (width: number, height: number) => {
+      if (!Number.isFinite(width) || width <= 0 || !Number.isFinite(height) || height <= 0) {
+        return { width: 1024, height: 1024 };
+      }
+
+      const requestedRatio = width / height;
+      if (!allowedTextToImageDimensions.length) {
+        return { width: 1024, height: 1024 };
+      }
+
+      let best: { width: number; height: number } = { width: 1024, height: 1024 };
+      let bestScore = Number.POSITIVE_INFINITY;
+
+      for (const option of allowedTextToImageDimensions) {
+        const optionRatio = option.width / option.height;
+        const ratioDiff = Math.abs(optionRatio - requestedRatio);
+        const widthDiff = Math.abs(option.width - width) / option.width;
+        const heightDiff = Math.abs(option.height - height) / option.height;
+        const orientationPenalty =
+          requestedRatio > 1 && option.width < option.height
+            ? 0.25
+            : requestedRatio < 1 && option.width > option.height
+              ? 0.25
+              : 0;
+        const score = ratioDiff * 2 + widthDiff + heightDiff + orientationPenalty;
+
+        if (score < bestScore) {
+          bestScore = score;
+          best = option;
+        }
+      }
+
+      return best;
+    };
+
+    const fallbackWidth = sourceMetadata.width || 1024;
+    const fallbackHeight = sourceMetadata.height || fallbackWidth || 1024;
+    const targetWidth = parseDimension(widthValue, fallbackWidth);
+    const targetHeight = parseDimension(heightValue, fallbackHeight);
+    const { width: stabilityWidth, height: stabilityHeight } = normalizeForStability(
+      targetWidth,
+      targetHeight,
+    );
+
+    const numericSeed =
+      typeof seedValue !== "undefined" && seedValue !== "" ? Number(seedValue) : undefined;
+    const parsedSeed =
+      typeof numericSeed === "number" && !Number.isNaN(numericSeed) ? numericSeed : undefined;
+
+    const context: PreparedBackgroundContext = {
+      resolvedPrompt,
+      promptSourceType,
+      derivedTheme,
+      sourceBuffer,
+      sourceMetadata,
+      stabilityWidth,
+      stabilityHeight,
+      metadataSummary,
+    };
+
+    if (typeof resolvedNegativePrompt !== "undefined") {
+      context.resolvedNegativePrompt = resolvedNegativePrompt;
+    }
+    if (typeof negativePromptSource !== "undefined") {
+      context.negativePromptSource = negativePromptSource;
+    }
+    if (typeof parsedSeed !== "undefined") {
+      context.parsedSeed = parsedSeed;
+    }
+    if (visionSummary) {
+      context.visionSummary = visionSummary;
+    }
+    if (visionAttributes?.length) {
+      context.visionAttributes = visionAttributes;
+    }
+    if (visionBackgroundIdeas?.length) {
+      context.visionBackgroundIdeas = visionBackgroundIdeas;
+    }
+    if (visionSizeHint) {
+      context.visionSizeHint = visionSizeHint;
+    }
+    if (visionPositionHint) {
+      context.visionPositionHint = visionPositionHint;
+    }
+
+    return context;
   }
 
   // ============================ get Single Image ============================
@@ -208,110 +486,208 @@ export class ImageServices implements IImageServices {
     return successHandler({ res, result: { image } });
   };
 
-  // ============================ generateSuitableBackgroundsFromImage ============================
-  generateSuitableBackgroundsFromImage = async (
+  // ============================ generateSuitableBackground ============================
+  generateSuitableBackground = async (
     req: Request,
     res: Response,
     next: NextFunction,
   ): Promise<Response> => {
-    const userId = res.locals.user?._id?.toString();
-    if (!userId) throw new ApplicationException("User not authenticated", 401);
-
-    const { imageId } = req.params;
-    if (!imageId || !mongoose.Types.ObjectId.isValid(imageId))
-      throw new ApplicationException("Invalid image ID", 400);
-
-    // جلب الصورة من DB
-    const image = await ImageModel.findOne({
-      _id: new mongoose.Types.ObjectId(imageId),
-      user: new mongoose.Types.ObjectId(userId),
-      deletedAt: null,
-    });
-    if (!image) throw new ApplicationException("Image not found", 404);
-
-    const tmpFolder = path.join(__dirname, "../../tmp");
-    if (!fs.existsSync(tmpFolder)) fs.mkdirSync(tmpFolder, { recursive: true });
-
-    // حفظ الصورة مؤقتًا
-    const tmpImagePath = path.join(tmpFolder, `input-${Date.now()}.png`);
-    const response = await fetch(image.url);
-    const arrayBuffer = await response.arrayBuffer();
-    fs.writeFileSync(tmpImagePath, Buffer.from(arrayBuffer));
-
-    // إعداد Replicate API
-    if (!process.env.REPLICATE_API_KEY)
-      throw new ApplicationException("REPLICATE_API_KEY missing", 500);
-
-    const replicateResponse = await axios.post(
-      "https://api.replicate.com/v1/predictions",
-      {
-        version: "a9758c6e0e16d6a8c3f8480c7b2c4f4c9f0c0a9e0f3b6c0a4d1e5c6b7d8f9a0b", // مثال على Stable Diffusion model
-        input: {
-          image: fs.createReadStream(tmpImagePath),
-          prompt: "Generate a clean, studio-style background suitable for product showcase",
-          num_outputs: 4,
-        },
-      },
-      {
-        headers: {
-          Authorization: `Token ${process.env.REPLICATE_API_KEY}`,
-          "Content-Type": "application/json",
-        },
-      },
-    );
-
-    const outputs = replicateResponse.data?.output || [];
-    const savedImages: any[] = [];
-    const projectFolder = process.env.PROJECT_FOLDER || "DefaultProjectFolder";
-
-    for (const base64 of outputs) {
-      const tmpOutputPath = path.join(tmpFolder, `bg-${Date.now()}-${Math.random()}.png`);
-      fs.writeFileSync(tmpOutputPath, Buffer.from(base64, "base64"));
-
-      const { public_id, secure_url } = await uploadSingleFile({
-        fileLocation: tmpOutputPath,
-        storagePathOnCloudinary: `${projectFolder}/${userId}/replicate-bg`,
-      });
-
-      const newImage = await ImageModel.create({
-        user: new mongoose.Types.ObjectId(userId),
-        url: secure_url,
-        storageKey: public_id,
-        filename: "generated-background.png",
-        mimeType: "image/png",
-        size: Buffer.from(base64, "base64").length,
-        dimensions: { width: 0, height: 0 },
-        status: "completed",
-        isPublic: false,
-        aiEdits: [
-          {
-            operation: "custom",
-            provider: "replicate",
-            prompt: "Generated suitable background for product",
-            parameters: { count: 4 },
-            timestamp: new Date(),
-            processingTime: 0,
-            cost: 0,
-          },
-        ],
-      });
-
-      savedImages.push({
-        _id: newImage._id,
-        url: newImage.url,
-        storageKey: newImage.storageKey,
-        aiEdits: newImage.aiEdits,
-      });
-
-      fs.unlinkSync(tmpOutputPath);
+    const user = res.locals.user;
+    if (!user?._id) {
+      throw new ApplicationException("User not authenticated", 401);
     }
 
-    fs.unlinkSync(tmpImagePath);
+    const bodyPayload = req.body || {};
+    const imageId = (bodyPayload.imageId as string | undefined) || (req.params as any)?.imageId;
+    const prompt = bodyPayload.prompt as string | undefined;
+    const negativePrompt = bodyPayload.negativePrompt as string | undefined;
+    const stylePreset = bodyPayload.stylePreset as string | undefined;
+    const seedValue = bodyPayload.seed;
+    const widthValue = bodyPayload.width;
+    const heightValue = bodyPayload.height;
+
+    if (!imageId || !mongoose.Types.ObjectId.isValid(imageId)) {
+      throw new ApplicationException("Valid imageId is required", 400);
+    }
+
+    const existingImage = await this.imageModel.findOne({
+      _id: new mongoose.Types.ObjectId(imageId),
+      user: new mongoose.Types.ObjectId(user._id),
+      deletedAt: null,
+    });
+
+    if (!existingImage) {
+      throw new ApplicationException("Image not found", 404);
+    }
+
+    const prepareOptions: PrepareBackgroundContextOptions = {
+      existingImage,
+      widthValue,
+      heightValue,
+      seedValue,
+    };
+    if (typeof prompt !== "undefined") {
+      prepareOptions.prompt = prompt;
+    }
+    if (typeof negativePrompt !== "undefined") {
+      prepareOptions.negativePrompt = negativePrompt;
+    }
+
+    const {
+      resolvedPrompt,
+      resolvedNegativePrompt,
+      promptSourceType,
+      negativePromptSource,
+      derivedTheme,
+      sourceBuffer,
+      stabilityWidth,
+      stabilityHeight,
+      parsedSeed,
+      metadataSummary,
+      visionSummary,
+      visionAttributes,
+      visionBackgroundIdeas,
+      visionSizeHint,
+      visionPositionHint,
+    } = await this.prepareBackgroundGenerationContext(prepareOptions);
+
+    const stabilityStartTime = Date.now();
+    const stabilityOptions: StabilityBackgroundOptions = {
+      productImageBuffer: sourceBuffer,
+      width: stabilityWidth,
+      height: stabilityHeight,
+      prompt: resolvedPrompt,
+    };
+
+    if (resolvedNegativePrompt) {
+      stabilityOptions.negativePrompt = resolvedNegativePrompt;
+    }
+    if (stylePreset && stylePreset.trim()) {
+      stabilityOptions.stylePreset = stylePreset.trim();
+    }
+    if (typeof parsedSeed !== "undefined") {
+      stabilityOptions.seed = parsedSeed;
+    }
+
+    const backgroundBuffer = await generateBackgroundWithStability(stabilityOptions);
+
+    const projectFolder = process.env.PROJECT_FOLDER || "DefaultProjectFolder";
+    const { public_id, secure_url } = await uploadBufferFile({
+      fileBuffer: backgroundBuffer,
+      storagePathOnCloudinary: `${projectFolder}/${user._id}/suitable-backgrounds`,
+    });
+
+    const tagSet = new Set<string>([
+      "genSuitableBackground",
+      "stability-bg",
+      "background-only",
+      derivedTheme,
+    ]);
+    if (stylePreset && stylePreset.trim()) {
+      tagSet.add(stylePreset.trim());
+    }
+    switch (promptSourceType) {
+      case "user":
+        tagSet.add("custom-prompt");
+        break;
+      case "user+vision":
+        tagSet.add("vision-assisted");
+        break;
+      case "vision-auto":
+        tagSet.add("vision-prompt");
+        break;
+      default:
+        tagSet.add("auto-prompt");
+    }
+    if (visionAttributes?.length) {
+      visionAttributes.slice(0, 4).forEach((attr) => {
+        const slug = attr
+          .toLowerCase()
+          .replace(/[^a-z0-9]+/g, "-")
+          .replace(/^-+|-+$/g, "");
+        if (slug) tagSet.add(slug);
+      });
+    }
+    if (visionSizeHint || visionPositionHint) {
+      tagSet.add("placement-aware");
+    }
+
+    const placementNotes: string[] = [];
+    if (visionPositionHint) placementNotes.push(`Position: ${visionPositionHint}`);
+    if (visionSizeHint) placementNotes.push(`Scale: ${visionSizeHint}`);
+
+    let backgroundDescription =
+      visionSummary ||
+      (prompt && prompt.trim()) ||
+      `AI generated ${derivedTheme} background concept via Stability AI.`;
+    if (placementNotes.length) {
+      backgroundDescription = `${backgroundDescription} Placement cues: ${placementNotes.join(
+        " | ",
+      )}.`;
+    }
+
+    const backgroundImage = await this.imageModel.create({
+      user: user._id,
+      url: secure_url,
+      storageKey: public_id,
+      filename: `${existingImage.filename || "image"}-bg-${Date.now()}.png`,
+      originalFilename: `${existingImage.originalFilename || existingImage.filename}-bg-only.png`,
+      mimeType: "image/png",
+      size: backgroundBuffer.length,
+      parentId: existingImage._id,
+      children: [],
+      isOriginal: false,
+      isBackgroundOnly: true,
+      version: (existingImage.version || 1) + 1,
+      aiEdits: [
+        {
+          operation: "text-to-image" as const,
+          provider: "stability-ai" as const,
+          ...(resolvedPrompt ? { prompt: resolvedPrompt } : {}),
+          parameters: {
+            ...(stylePreset && stylePreset.trim() ? { stylePreset: stylePreset.trim() } : {}),
+            width: stabilityWidth,
+            height: stabilityHeight,
+            ...(typeof parsedSeed !== "undefined" ? { seed: parsedSeed } : {}),
+            ...(resolvedNegativePrompt ? { negativePrompt: resolvedNegativePrompt } : {}),
+            promptSource: promptSourceType,
+            ...(negativePromptSource ? { negativePromptSource } : {}),
+            theme: derivedTheme,
+            metadataSummary,
+            backgroundOnly: true,
+            ...(visionSummary ? { visionSummary } : {}),
+            ...(visionAttributes?.length ? { visionAttributes } : {}),
+            ...(visionBackgroundIdeas?.length ? { visionBackgroundIdeas } : {}),
+            ...(visionSizeHint ? { visionSizeHint } : {}),
+            ...(visionPositionHint ? { visionPositionHint } : {}),
+          },
+          timestamp: new Date(),
+          processingTime: Date.now() - stabilityStartTime,
+        },
+      ],
+      status: "completed" as const,
+      tags: Array.from(tagSet),
+      title: existingImage.title
+        ? `${existingImage.title} - background concept`
+        : `${existingImage.filename}-background`,
+      description: backgroundDescription,
+      category: existingImage.category || "product",
+      isPublic: false,
+      views: 0,
+      downloads: 0,
+      dimensions: {
+        width: stabilityWidth,
+        height: stabilityHeight,
+      },
+    });
 
     return successHandler({
       res,
-      message: "Generated suitable backgrounds successfully (Replicate)",
-      result: savedImages,
+      message: "Background generated successfully",
+      result: {
+        sourceImage: this.serializeImageDoc(existingImage),
+        backgroundImage: this.serializeImageDoc(backgroundImage),
+      },
     });
   };
 
@@ -361,203 +737,37 @@ export class ImageServices implements IImageServices {
       throw new ApplicationException("Image not found", 404);
     }
 
-    const promptSourceImage =
-      typeof (existingImage as any).toObject === "function"
-        ? ((existingImage as any).toObject() as Partial<IImage>)
-        : (existingImage as unknown as Partial<IImage>) || {};
-
-    const fallbackPromptPlan = buildBackgroundPrompt(promptSourceImage, prompt);
-    let resolvedPrompt = fallbackPromptPlan.prompt;
-    const derivedTheme: BackgroundTheme = fallbackPromptPlan.theme;
-    let promptSourceType: BackgroundPromptSource = fallbackPromptPlan.source;
-
-    let resolvedNegativePrompt =
-      negativePrompt && negativePrompt.trim()
-        ? negativePrompt.trim()
-        : buildDefaultNegativePrompt(derivedTheme);
-
-    const sourceBuffer = await this.downloadImageAsBuffer(existingImage.url);
-    const sourceMetadata = await sharp(sourceBuffer).metadata();
-
-    const metadataSummaryParts: string[] = [];
-    if (existingImage.title) metadataSummaryParts.push(`Title: ${existingImage.title}`);
-    if (existingImage.description)
-      metadataSummaryParts.push(`Description: ${existingImage.description}`);
-    if (existingImage.category) metadataSummaryParts.push(`Category: ${existingImage.category}`);
-    if (Array.isArray(existingImage.tags) && existingImage.tags.length) {
-      metadataSummaryParts.push(`Tags: ${existingImage.tags.slice(0, 8).join(", ")}`);
-    }
-    metadataSummaryParts.push(
-      `Theme guess: ${derivedTheme} | Dimensions: ${sourceMetadata.width || "?"}x${sourceMetadata.height || "?"}`,
-    );
-    const metadataSummary = metadataSummaryParts.join(" | ");
-
-    const productAnalysis = await generateProductPromptFromImage({
-      imageBuffer: sourceBuffer,
-      mimeType: existingImage.mimeType,
-      metadataText: metadataSummary,
-      userPrompt: prompt,
-    });
-
-    let visionSummary: string | undefined;
-    let visionAttributes: string[] | undefined;
-    let visionBackgroundIdeas: string[] | undefined;
-    let visionSizeHint: string | undefined;
-    let visionPositionHint: string | undefined;
-    let negativePromptSource: "user" | "vision" | "auto" | undefined =
-      negativePrompt && negativePrompt.trim()
-        ? "user"
-        : resolvedNegativePrompt
-          ? "auto"
-          : undefined;
-
-    if (productAnalysis) {
-      const combinedPromptParts: string[] = [];
-      if (prompt && prompt.trim()) combinedPromptParts.push(prompt.trim());
-      if (productAnalysis.prompt && productAnalysis.prompt.trim()) {
-        combinedPromptParts.push(productAnalysis.prompt.trim());
-      }
-      if (!combinedPromptParts.length && resolvedPrompt) {
-        combinedPromptParts.push(resolvedPrompt);
-      }
-      const combinedPrompt = combinedPromptParts.join("\n\n").trim();
-      if (combinedPrompt) {
-        resolvedPrompt = combinedPrompt;
-        promptSourceType = prompt && prompt.trim() ? "user+vision" : "vision-auto";
-      }
-
-      if (!negativePrompt || !negativePrompt.trim()) {
-        const visionNegative = productAnalysis.negativePrompt?.trim();
-        if (visionNegative) {
-          resolvedNegativePrompt = visionNegative;
-          negativePromptSource = "vision";
-        } else if (!resolvedNegativePrompt) {
-          resolvedNegativePrompt = buildDefaultNegativePrompt(derivedTheme);
-          negativePromptSource = resolvedNegativePrompt ? "auto" : undefined;
-        }
-      }
-
-      visionSummary = productAnalysis.summary?.trim() || undefined;
-      visionAttributes = Array.isArray(productAnalysis.attributes)
-        ? productAnalysis.attributes.filter((attr) => typeof attr === "string" && attr.trim())
-        : undefined;
-      if (visionAttributes) {
-        visionAttributes = visionAttributes.map((attr) => attr.trim());
-      }
-      visionBackgroundIdeas = Array.isArray(productAnalysis.backgroundIdeas)
-        ? productAnalysis.backgroundIdeas.filter((idea) => typeof idea === "string" && idea.trim())
-        : undefined;
-      if (visionBackgroundIdeas) {
-        visionBackgroundIdeas = visionBackgroundIdeas.map((idea) => idea.trim());
-      }
-
-      visionSizeHint = productAnalysis.sizeHint?.trim() || undefined;
-      visionPositionHint = productAnalysis.positionHint?.trim() || undefined;
-
-      const placementGuidanceParts: string[] = [];
-      if (visionSizeHint) {
-        placementGuidanceParts.push(`Product scale guidance: ${visionSizeHint}`);
-      }
-      if (visionPositionHint) {
-        placementGuidanceParts.push(`Product placement guidance: ${visionPositionHint}`);
-      }
-
-      if (
-        placementGuidanceParts.length &&
-        !/foreground placement guidance:/i.test(resolvedPrompt)
-      ) {
-        resolvedPrompt = `${resolvedPrompt}\n\nForeground placement guidance: ${placementGuidanceParts.join(
-          " | ",
-        )}. Align props, camera perspective, and horizon lines so the product feels naturally integrated.`;
-      }
-
-      if (!negativePromptSource) {
-        negativePromptSource = negativePrompt && negativePrompt.trim() ? "user" : undefined;
-      }
-    }
-
-    if (!negativePromptSource) {
-      negativePromptSource =
-        negativePrompt && negativePrompt.trim()
-          ? "user"
-          : productAnalysis?.negativePrompt
-            ? "vision"
-            : resolvedNegativePrompt
-              ? "auto"
-              : undefined;
-    }
-
-    const parseDimension = (value: unknown, fallback: number) => {
-      if (typeof value === "undefined" || value === null || value === "") {
-        return fallback;
-      }
-      const parsed = Number(value);
-      if (Number.isNaN(parsed) || parsed <= 0) {
-        throw new ApplicationException("width/height must be positive numbers", 400);
-      }
-      return parsed;
+    const prepareOptions: PrepareBackgroundContextOptions = {
+      existingImage,
+      widthValue,
+      heightValue,
+      seedValue,
     };
+    if (typeof prompt !== "undefined") {
+      prepareOptions.prompt = prompt;
+    }
+    if (typeof negativePrompt !== "undefined") {
+      prepareOptions.negativePrompt = negativePrompt;
+    }
 
-    const allowedTextToImageDimensions = [
-      { width: 1024, height: 1024 },
-      { width: 1152, height: 896 },
-      { width: 1216, height: 832 },
-      { width: 1344, height: 768 },
-      { width: 1536, height: 640 },
-      { width: 640, height: 1536 },
-      { width: 768, height: 1344 },
-      { width: 832, height: 1216 },
-      { width: 896, height: 1152 },
-    ];
-
-    const normalizeForStability = (width: number, height: number) => {
-      if (!Number.isFinite(width) || width <= 0 || !Number.isFinite(height) || height <= 0) {
-        return { width: 1024, height: 1024 };
-      }
-
-      const requestedRatio = width / height;
-      if (!allowedTextToImageDimensions.length) {
-        return { width: 1024, height: 1024 };
-      }
-
-      let best: { width: number; height: number } = { width: 1024, height: 1024 };
-      let bestScore = Number.POSITIVE_INFINITY;
-
-      for (const option of allowedTextToImageDimensions) {
-        const optionRatio = option.width / option.height;
-        const ratioDiff = Math.abs(optionRatio - requestedRatio);
-        const widthDiff = Math.abs(option.width - width) / option.width;
-        const heightDiff = Math.abs(option.height - height) / option.height;
-        const orientationPenalty =
-          requestedRatio > 1 && option.width < option.height
-            ? 0.25
-            : requestedRatio < 1 && option.width > option.height
-              ? 0.25
-              : 0;
-        const score = ratioDiff * 2 + widthDiff + heightDiff + orientationPenalty;
-
-        if (score < bestScore) {
-          bestScore = score;
-          best = option;
-        }
-      }
-
-      return best;
-    };
-
-    const fallbackWidth = sourceMetadata.width || 1024;
-    const fallbackHeight = sourceMetadata.height || fallbackWidth || 1024;
-    const targetWidth = parseDimension(widthValue, fallbackWidth);
-    const targetHeight = parseDimension(heightValue, fallbackHeight);
-    const { width: stabilityWidth, height: stabilityHeight } = normalizeForStability(
-      targetWidth,
-      targetHeight,
-    );
-
-    const numericSeed =
-      typeof seedValue !== "undefined" && seedValue !== "" ? Number(seedValue) : undefined;
-    const parsedSeed =
-      typeof numericSeed === "number" && !Number.isNaN(numericSeed) ? numericSeed : undefined;
+    const {
+      resolvedPrompt,
+      resolvedNegativePrompt,
+      promptSourceType,
+      negativePromptSource,
+      derivedTheme,
+      sourceBuffer,
+      sourceMetadata,
+      stabilityWidth,
+      stabilityHeight,
+      parsedSeed,
+      metadataSummary,
+      visionSummary,
+      visionAttributes,
+      visionBackgroundIdeas,
+      visionSizeHint,
+      visionPositionHint,
+    } = await this.prepareBackgroundGenerationContext(prepareOptions);
 
     const stabilityStartTime = Date.now();
     const stabilityOptions: StabilityBackgroundOptions = {
@@ -1614,65 +1824,64 @@ export class ImageServices implements IImageServices {
   };
 
   // ============================ uploadImageWithoutBackground ============================
- uploadImageWithoutBackground = async (
-  req: Request,
-  res: Response,
-  next: NextFunction,
-): Promise<Response> => {
- const userId = res.locals.user?._id?.toString();
-  if (!userId) throw new ApplicationException("User not authenticated", 401);
+  uploadImageWithoutBackground = async (
+    req: Request,
+    res: Response,
+    next: NextFunction,
+  ): Promise<Response> => {
+    const userId = res.locals.user?._id?.toString();
+    if (!userId) throw new ApplicationException("User not authenticated", 401);
 
-  if (!req.file) throw new ApplicationException("No image uploaded", 400);
+    if (!req.file) throw new ApplicationException("No image uploaded", 400);
 
-  const fileBuffer = fs.readFileSync(req.file.path);
-  const base64Image = fileBuffer.toString("base64");
+    const fileBuffer = fs.readFileSync(req.file.path);
+    const base64Image = fileBuffer.toString("base64");
 
-  const resultBase64 = await removeBackgroundFromImageBase64({
-    imageBase64: base64Image,
-  });
+    const resultBase64 = await removeBackgroundFromImageBase64({
+      imageBase64: base64Image,
+    });
 
-  const bufferToUpload = Buffer.from(resultBase64, "base64");
+    const bufferToUpload = Buffer.from(resultBase64, "base64");
 
-  const projectFolder = process.env.PROJECT_FOLDER || "DefaultProjectFolder";
+    const projectFolder = process.env.PROJECT_FOLDER || "DefaultProjectFolder";
 
-  const { public_id, secure_url } = await uploadBufferFile({
-    fileBuffer: bufferToUpload,
-    storagePathOnCloudinary: `${projectFolder}/${userId}/no-bg`
-  });
+    const { public_id, secure_url } = await uploadBufferFile({
+      fileBuffer: bufferToUpload,
+      storagePathOnCloudinary: `${projectFolder}/${userId}/no-bg`,
+    });
 
-  const newImage = await ImageModel.create({
-    user: new mongoose.Types.ObjectId(userId),
-    url: secure_url,
-    storageKey: public_id,
-    filename: req.file.originalname,
-    mimeType: req.file.mimetype,
-    size: req.file.size,
-    dimensions: { width: 0, height: 0 },
-    status: "completed",
-    isPublic: false,
-    aiEdits: [
-      {
-        operation: "remove-background",
-        provider: "custom",
-        timestamp: new Date(),
-        processingTime: 0,
-        cost: 0,
+    const newImage = await ImageModel.create({
+      user: new mongoose.Types.ObjectId(userId),
+      url: secure_url,
+      storageKey: public_id,
+      filename: req.file.originalname,
+      mimeType: req.file.mimetype,
+      size: req.file.size,
+      dimensions: { width: 0, height: 0 },
+      status: "completed",
+      isPublic: false,
+      aiEdits: [
+        {
+          operation: "remove-background",
+          provider: "custom",
+          timestamp: new Date(),
+          processingTime: 0,
+          cost: 0,
+        },
+      ],
+    });
+
+    fs.unlinkSync(req.file.path);
+
+    return successHandler({
+      res,
+      message: "Image uploaded and background removed successfully",
+      result: {
+        _id: newImage._id,
+        url: newImage.url,
+        storageKey: newImage.storageKey,
+        aiEdits: newImage.aiEdits,
       },
-    ],
-  });
-
-  fs.unlinkSync(req.file.path);
-
-  return successHandler({
-    res,
-    message: "Image uploaded and background removed successfully",
-    result: {
-      _id: newImage._id,
-      url: newImage.url,
-      storageKey: newImage.storageKey,
-      aiEdits: newImage.aiEdits,
-    },
-  });
-}
-
+    });
+  };
 }

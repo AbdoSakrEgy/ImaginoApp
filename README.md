@@ -138,6 +138,40 @@ The following endpoints live under the `/image` router and require a valid beare
 - `400` if no `imageFile` is uploaded.
 - `500` when the external background-removal API fails or Cloudinary upload errors out (these bubble up as `ApplicationException`).
 
+## POST `/image/gen-suitable-background`
+
+- **Purpose**: Pre-generate background concepts that match a transparent product cutout without compositing the product back in. The service reuses the exact AI pipeline from `/gen-img-with-new-background` (vision analysis + Stability) but uploads the raw background only asset, marks it with `isBackgroundOnly = true`, and leaves it ready for later manual pairing.
+- **Payload style**: JSON body identical to `/gen-img-with-new-background`. At minimum supply `imageId`; optional creative controls (`prompt`, `negativePrompt`, `stylePreset`, `seed`, `width`, `height`) behave the same way.
+
+### Response shape
+
+```jsonc
+{
+  "message": "Background generated successfully",
+  "status": 200,
+  "result": {
+    "sourceImage": {
+      /* sanitized doc for the transparent product */
+    },
+    "backgroundImage": {
+      /* stored ImageModel doc with isBackgroundOnly=true */
+    },
+  },
+}
+```
+
+### Implementation notes
+
+- Background prompts, negative prompts, placement hints, and size guidance all flow through the OpenAI stage-one analysis just like the full composite endpoint.
+- The stage-one prompts now explicitly reserve an empty staging pocket so each generated background clearly leaves room for the foreground product.
+- Backgrounds are uploaded directly from buffers to Cloudinary under `${PROJECT_FOLDER || "DefaultProjectFolder"}/${userId}/suitable-backgrounds` to avoid filesystem churn.
+- Every generated asset is tagged with `genSuitableBackground`, `background-only`, and `stability-bg`, plus any detected theme/style preset so clients can filter by context.
+- AI metadata (`aiEdits[0].parameters`) includes `backgroundOnly: true`, prompt provenance, placement hints, and snapshotted prompt details for auditing.
+
+### Typical errors
+
+- Same as `/gen-img-with-new-background` (auth failure, invalid `imageId`, Stability API issues).
+
 ## POST `/image/gen-img-with-new-background`
 
 - **Purpose**: Compose a lifestyle-ready asset by taking a previously uploaded transparent product image (typically produced via `/gen-img-without-background`) and asking Stability AI to hallucinate a new background, then blending the two layers together.
@@ -159,7 +193,7 @@ The following endpoints live under the `/image` router and require a valid beare
 
 1. Validates ownership of `imageId`.
 2. Downloads the transparent PNG from Cloudinary.
-3. Runs a "stage-one" vision analysis via OpenAI (`gpt-4o-mini` by default) that inspects the transparent PNG and produces a JSON payload containing: a richly detailed positive prompt, an optional negative prompt, product attributes, background scene ideas, **and explicit hints about how large the product appears plus where it sits in-frame**. Those placement hints are appended to the Stability prompt so the synthesized scene respects the product's perceived scale.
+3. Runs a "stage-one" vision analysis via OpenAI (`gpt-4o-mini` by default) that inspects the transparent PNG and produces a JSON payload containing: a richly detailed positive prompt, an optional negative prompt, product attributes, background scene ideas, **and explicit hints about how large the product appears plus where it sits in-frame**. Those placement hints are appended to the Stability prompt so the synthesized scene respects the product's perceived scale, and every prompt reiterates that there must be an empty staging pocket left open for the real product.
 4. Calls the Stability AI Replace Background endpoint (`/v2beta/stable-image/edit/replace-background`) with the product layer plus the combined prompt metadata to synthesize a new backdrop (automatically falling back to a text-to-image generation when the replace endpoint is unavailable in the current region/plan). When falling back, requested `width`/`height` are snapped to the SDXL-approved resolutions to avoid `invalid_sdxl_v1_dimensions` errors.
 5. Uses `sharp` to composite the original product atop the generated background. The compositor auto-detects product themes (vehicles, beauty, fashion, etc.) and repositions/resizes the foreground to a grounded spot when appropriate (e.g., cars near the horizon line, tall bottles offset from center). All preset themes, prompt templates, and placement heuristics now live in `src/modules/image/background.helpers.ts`, keeping the service lean while preserving the curated fallbacks. When the stage-one vision call returns scale/position hints, those are stored with the AI edit metadata, tagged on the derived asset, and reiterated inside the Stability prompt so background props align with the product's footprint. The finished merge uploads to Cloudinary and is stored as a child image linked to the transparent parent, and metadata captures whether the prompt was user-only, vision-assisted, or fully auto-generated.
 
