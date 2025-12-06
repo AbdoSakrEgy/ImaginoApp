@@ -6,7 +6,7 @@ import { fal } from "@fal-ai/client";
  * @returns الصورة الناتجة كـ base64
  */
 export async function convertWithFalAI(base64Image: string): Promise<string> {
-  const FAL_AI_KEY = "76659c46-3c75-46c2-bac1-913e50c4c375:61a36c0700e3f0ddc3c3635244b7a729";
+  const FAL_AI_KEY = process.env.FAL_AI_KEY as string;
   if (!FAL_AI_KEY) throw new Error("Missing FAL_AI_KEY");
 
   // إعداد المفتاح عند استدعاء الدالة

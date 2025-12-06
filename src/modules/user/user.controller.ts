@@ -3,12 +3,8 @@ import { UserServices } from "./user.service";
 import { auth } from "../../middlewares/auth.middleware";
 import { validation } from "../../middlewares/validation.middleware";
 import {
-  deleteMultiFilesSchema,
-  createPresignedUrlToGetFileSchema,
   updateBasicInfoSchema,
-  uploadAvatarImageSchema,
   uploadProfileImageSchema,
-  uploadProfileVideoSchema,
   payWithStripeSchema,
 } from "./user.validation";
 import { fileTypes, multerUpload, StoreInEnum } from "../../utils/multer/multer.upload";
@@ -19,42 +15,11 @@ const userServices = new UserServices();
 
 router.get("/user-profile", auth, authPlans([PricingPlanEnum.PRO]), userServices.userProfile);
 router.get("/user-profile/:userId", auth, userServices.userProfile);
-router.patch(
-  "/upload-profile-image",
-  auth,
-  multerUpload({ storeIn: StoreInEnum.disk, sendedFileDest: "profile" }).single("profileImage"),
-  validation(uploadProfileImageSchema),
-  userServices.uploadProfileImage,
-);
+router.patch("/upload-profile-image",auth,multerUpload({ storeIn: StoreInEnum.disk, sendedFileDest: "profile" }).single("profileImage"),validation(uploadProfileImageSchema),userServices.uploadProfileImage,);
 router.delete("/delete-profile-image", auth, userServices.deleteProfileImage);
-
-router.patch(
-  "/update-basic-info",
-  auth,
-  validation(updateBasicInfoSchema),
-  userServices.updateBasicInfo,
-);
+router.patch("/update-basic-info",auth,validation(updateBasicInfoSchema),userServices.updateBasicInfo,);
 router.post("/pay-with-stripe", auth, validation(payWithStripeSchema), userServices.payWithStripe);
 router.post("/web-hook-with-stripe", userServices.webHookWithStripe);
-router.get("/images", auth, userServices.getUserImages);
-
-// router.get("/get-file/*path", userServices.getFile);
-// router.get(
-//   "/create-presignedUrl-toGetFile/*path",
-//   validation(createPresignedUrlToGetFileSchema),
-//   userServices.createPresignedUrlToGetFile,
-// );
-// router.delete("/delete-file/*path", userServices.deleteFile);
-// router.delete(
-//   "/delete-multi-files",
-//   validation(deleteMultiFilesSchema),
-//   userServices.deleteMultiFiles,
-// );
-// router.patch(
-//   "/update-basic-info",
-//   auth,
-//   validation(updateBasicInfoSchema),
-//   userServices.updateBasicInfo,
-// );
+router.get("/get-user-gallery", auth, userServices.getUserImages);
 
 export default router;
