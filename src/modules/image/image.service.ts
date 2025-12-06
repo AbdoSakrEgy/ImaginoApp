@@ -33,6 +33,36 @@ import { generateProductPromptFromImage } from "../../utils/ai/productPromptGene
 import { uploadBufferFile } from "../../utils/cloudinary/cloudinaryBuffer.service";
 import { convertWithFalAI } from "../../utils/ai/convertWithFalAi";
 
+type NegativePromptSource = "user" | "vision" | "auto";
+
+interface PrepareBackgroundContextOptions {
+  existingImage: IImage;
+  prompt?: string;
+  negativePrompt?: string;
+  widthValue?: unknown;
+  heightValue?: unknown;
+  seedValue?: unknown;
+}
+
+interface PreparedBackgroundContext {
+  resolvedPrompt: string;
+  resolvedNegativePrompt?: string;
+  promptSourceType: BackgroundPromptSource;
+  negativePromptSource?: NegativePromptSource;
+  derivedTheme: BackgroundTheme;
+  sourceBuffer: Buffer;
+  sourceMetadata: sharp.Metadata;
+  stabilityWidth: number;
+  stabilityHeight: number;
+  parsedSeed?: number;
+  metadataSummary: string;
+  visionSummary?: string;
+  visionAttributes?: string[];
+  visionBackgroundIdeas?: string[];
+  visionSizeHint?: string;
+  visionPositionHint?: string;
+}
+
 export class ImageServices implements IImageServices {
   private imageModel = ImageModel;
 
@@ -109,6 +139,254 @@ export class ImageServices implements IImageServices {
   private async downloadImageAsBuffer(url: string): Promise<Buffer> {
     const response = await axios.get(url, { responseType: "arraybuffer" });
     return Buffer.from(response.data);
+  }
+
+  private async prepareBackgroundGenerationContext(
+    options: PrepareBackgroundContextOptions,
+  ): Promise<PreparedBackgroundContext> {
+    const { existingImage, prompt, negativePrompt, widthValue, heightValue, seedValue } = options;
+
+    const promptSourceImage =
+      typeof (existingImage as any).toObject === "function"
+        ? ((existingImage as any).toObject() as Partial<IImage>)
+        : (existingImage as unknown as Partial<IImage>) || {};
+
+    const fallbackPromptPlan = buildBackgroundPrompt(promptSourceImage, prompt);
+    let resolvedPrompt = fallbackPromptPlan.prompt;
+    const derivedTheme: BackgroundTheme = fallbackPromptPlan.theme;
+    let promptSourceType: BackgroundPromptSource = fallbackPromptPlan.source;
+
+    let resolvedNegativePrompt =
+      negativePrompt && negativePrompt.trim()
+        ? negativePrompt.trim()
+        : buildDefaultNegativePrompt(derivedTheme);
+
+    const sourceBuffer = await this.downloadImageAsBuffer(existingImage.url);
+    const sourceMetadata = await sharp(sourceBuffer).metadata();
+
+    const metadataSummaryParts: string[] = [];
+    if (existingImage.title) metadataSummaryParts.push(`Title: ${existingImage.title}`);
+    if (existingImage.description)
+      metadataSummaryParts.push(`Description: ${existingImage.description}`);
+    if (existingImage.category) metadataSummaryParts.push(`Category: ${existingImage.category}`);
+    if (Array.isArray(existingImage.tags) && existingImage.tags.length) {
+      metadataSummaryParts.push(`Tags: ${existingImage.tags.slice(0, 8).join(", ")}`);
+    }
+    metadataSummaryParts.push(
+      `Theme guess: ${derivedTheme} | Dimensions: ${sourceMetadata.width || "?"}x${sourceMetadata.height || "?"}`,
+    );
+    const metadataSummary = metadataSummaryParts.join(" | ");
+
+    const productAnalysis = await generateProductPromptFromImage({
+      imageBuffer: sourceBuffer,
+      mimeType: existingImage.mimeType,
+      metadataText: metadataSummary,
+      userPrompt: prompt,
+    });
+
+    const emptyStagingRequirement =
+      "Reserve a clean, unobstructed staging pocket that matches the product's perspective and lighting; never place placeholder hero objects or text in that space.";
+
+    let visionSummary: string | undefined;
+    let visionAttributes: string[] | undefined;
+    let visionBackgroundIdeas: string[] | undefined;
+    let visionSizeHint: string | undefined;
+    let visionPositionHint: string | undefined;
+    let negativePromptSource: NegativePromptSource | undefined =
+      negativePrompt && negativePrompt.trim()
+        ? "user"
+        : resolvedNegativePrompt
+          ? "auto"
+          : undefined;
+    let appendedEmptyPocketClause = false;
+
+    if (productAnalysis) {
+      const combinedPromptParts: string[] = [];
+      if (prompt && prompt.trim()) combinedPromptParts.push(prompt.trim());
+      if (productAnalysis.prompt && productAnalysis.prompt.trim()) {
+        combinedPromptParts.push(productAnalysis.prompt.trim());
+      }
+      if (!combinedPromptParts.length && resolvedPrompt) {
+        combinedPromptParts.push(resolvedPrompt);
+      }
+      const combinedPrompt = combinedPromptParts.join("\n\n").trim();
+      if (combinedPrompt) {
+        resolvedPrompt = combinedPrompt;
+        promptSourceType = prompt && prompt.trim() ? "user+vision" : "vision-auto";
+      }
+
+      if (!negativePrompt || !negativePrompt.trim()) {
+        const visionNegative = productAnalysis.negativePrompt?.trim();
+        if (visionNegative) {
+          resolvedNegativePrompt = visionNegative;
+          negativePromptSource = "vision";
+        } else if (!resolvedNegativePrompt) {
+          resolvedNegativePrompt = buildDefaultNegativePrompt(derivedTheme);
+          negativePromptSource = resolvedNegativePrompt ? "auto" : undefined;
+        }
+      }
+
+      visionSummary = productAnalysis.summary?.trim() || undefined;
+      visionAttributes = Array.isArray(productAnalysis.attributes)
+        ? productAnalysis.attributes.filter((attr) => typeof attr === "string" && attr.trim())
+        : undefined;
+      if (visionAttributes) {
+        visionAttributes = visionAttributes.map((attr) => attr.trim());
+      }
+      visionBackgroundIdeas = Array.isArray(productAnalysis.backgroundIdeas)
+        ? productAnalysis.backgroundIdeas.filter((idea) => typeof idea === "string" && idea.trim())
+        : undefined;
+      if (visionBackgroundIdeas) {
+        visionBackgroundIdeas = visionBackgroundIdeas.map((idea) => idea.trim());
+      }
+
+      visionSizeHint = productAnalysis.sizeHint?.trim() || undefined;
+      visionPositionHint = productAnalysis.positionHint?.trim() || undefined;
+
+      const placementGuidanceParts: string[] = [emptyStagingRequirement];
+      if (visionSizeHint) placementGuidanceParts.push(`Product scale guidance: ${visionSizeHint}`);
+      if (visionPositionHint)
+        placementGuidanceParts.push(`Product placement guidance: ${visionPositionHint}`);
+
+      if (
+        placementGuidanceParts.length &&
+        !/foreground placement guidance:/i.test(resolvedPrompt)
+      ) {
+        resolvedPrompt = `${resolvedPrompt}\n\nForeground placement guidance: ${placementGuidanceParts.join(
+          " | ",
+        )}. Align props, camera perspective, and horizon lines so the product feels naturally integrated.`;
+        appendedEmptyPocketClause = true;
+      }
+
+      if (!negativePromptSource) {
+        negativePromptSource = negativePrompt && negativePrompt.trim() ? "user" : undefined;
+      }
+    }
+
+    if (!appendedEmptyPocketClause && !/product staging requirement:/i.test(resolvedPrompt)) {
+      resolvedPrompt = `${resolvedPrompt}\n\nProduct staging requirement: ${emptyStagingRequirement}`;
+    }
+
+    if (!negativePromptSource) {
+      negativePromptSource =
+        negativePrompt && negativePrompt.trim()
+          ? "user"
+          : productAnalysis?.negativePrompt
+            ? "vision"
+            : resolvedNegativePrompt
+              ? "auto"
+              : undefined;
+    }
+
+    const parseDimension = (value: unknown, fallback: number) => {
+      if (typeof value === "undefined" || value === null || value === "") {
+        return fallback;
+      }
+      const parsed = Number(value);
+      if (Number.isNaN(parsed) || parsed <= 0) {
+        throw new ApplicationException("width/height must be positive numbers", 400);
+      }
+      return parsed;
+    };
+
+    const allowedTextToImageDimensions = [
+      { width: 1024, height: 1024 },
+      { width: 1152, height: 896 },
+      { width: 1216, height: 832 },
+      { width: 1344, height: 768 },
+      { width: 1536, height: 640 },
+      { width: 640, height: 1536 },
+      { width: 768, height: 1344 },
+      { width: 832, height: 1216 },
+      { width: 896, height: 1152 },
+    ];
+
+    const normalizeForStability = (width: number, height: number) => {
+      if (!Number.isFinite(width) || width <= 0 || !Number.isFinite(height) || height <= 0) {
+        return { width: 1024, height: 1024 };
+      }
+
+      const requestedRatio = width / height;
+      if (!allowedTextToImageDimensions.length) {
+        return { width: 1024, height: 1024 };
+      }
+
+      let best: { width: number; height: number } = { width: 1024, height: 1024 };
+      let bestScore = Number.POSITIVE_INFINITY;
+
+      for (const option of allowedTextToImageDimensions) {
+        const optionRatio = option.width / option.height;
+        const ratioDiff = Math.abs(optionRatio - requestedRatio);
+        const widthDiff = Math.abs(option.width - width) / option.width;
+        const heightDiff = Math.abs(option.height - height) / option.height;
+        const orientationPenalty =
+          requestedRatio > 1 && option.width < option.height
+            ? 0.25
+            : requestedRatio < 1 && option.width > option.height
+              ? 0.25
+              : 0;
+        const score = ratioDiff * 2 + widthDiff + heightDiff + orientationPenalty;
+
+        if (score < bestScore) {
+          bestScore = score;
+          best = option;
+        }
+      }
+
+      return best;
+    };
+
+    const fallbackWidth = sourceMetadata.width || 1024;
+    const fallbackHeight = sourceMetadata.height || fallbackWidth || 1024;
+    const targetWidth = parseDimension(widthValue, fallbackWidth);
+    const targetHeight = parseDimension(heightValue, fallbackHeight);
+    const { width: stabilityWidth, height: stabilityHeight } = normalizeForStability(
+      targetWidth,
+      targetHeight,
+    );
+
+    const numericSeed =
+      typeof seedValue !== "undefined" && seedValue !== "" ? Number(seedValue) : undefined;
+    const parsedSeed =
+      typeof numericSeed === "number" && !Number.isNaN(numericSeed) ? numericSeed : undefined;
+
+    const context: PreparedBackgroundContext = {
+      resolvedPrompt,
+      promptSourceType,
+      derivedTheme,
+      sourceBuffer,
+      sourceMetadata,
+      stabilityWidth,
+      stabilityHeight,
+      metadataSummary,
+    };
+
+    if (typeof resolvedNegativePrompt !== "undefined") {
+      context.resolvedNegativePrompt = resolvedNegativePrompt;
+    }
+    if (typeof negativePromptSource !== "undefined") {
+      context.negativePromptSource = negativePromptSource;
+    }
+    if (typeof parsedSeed !== "undefined") {
+      context.parsedSeed = parsedSeed;
+    }
+    if (visionSummary) {
+      context.visionSummary = visionSummary;
+    }
+    if (visionAttributes?.length) {
+      context.visionAttributes = visionAttributes;
+    }
+    if (visionBackgroundIdeas?.length) {
+      context.visionBackgroundIdeas = visionBackgroundIdeas;
+    }
+    if (visionSizeHint) {
+      context.visionSizeHint = visionSizeHint;
+    }
+    if (visionPositionHint) {
+      context.visionPositionHint = visionPositionHint;
+    }
+
+    return context;
   }
 
   // ============================ get Single Image ============================
@@ -209,110 +487,519 @@ export class ImageServices implements IImageServices {
     return successHandler({ res, result: { image } });
   };
 
-  // ============================ generateSuitableBackgroundsFromImage ============================
-  generateSuitableBackgroundsFromImage = async (
+  // ============================ listBackgroundsForImage ============================
+  listBackgroundsForImage = async (
     req: Request,
     res: Response,
     next: NextFunction,
   ): Promise<Response> => {
     const userId = res.locals.user?._id?.toString();
-    if (!userId) throw new ApplicationException("User not authenticated", 401);
+    if (!userId) {
+      throw new ApplicationException("User not authenticated", 401);
+    }
 
-    const { imageId } = req.params;
-    if (!imageId || !mongoose.Types.ObjectId.isValid(imageId))
-      throw new ApplicationException("Invalid image ID", 400);
+    const imageId = (req.params as Record<string, string | undefined>).imageId;
+    if (!imageId || !mongoose.Types.ObjectId.isValid(imageId)) {
+      throw new ApplicationException("Valid imageId is required", 400);
+    }
 
-    // جلب الصورة من DB
-    const image = await ImageModel.findOne({
+    const parentImage = await this.imageModel.findOne({
       _id: new mongoose.Types.ObjectId(imageId),
       user: new mongoose.Types.ObjectId(userId),
       deletedAt: null,
     });
-    if (!image) throw new ApplicationException("Image not found", 404);
 
-    const tmpFolder = path.join(__dirname, "../../tmp");
-    if (!fs.existsSync(tmpFolder)) fs.mkdirSync(tmpFolder, { recursive: true });
-
-    // حفظ الصورة مؤقتًا
-    const tmpImagePath = path.join(tmpFolder, `input-${Date.now()}.png`);
-    const response = await fetch(image.url);
-    const arrayBuffer = await response.arrayBuffer();
-    fs.writeFileSync(tmpImagePath, Buffer.from(arrayBuffer));
-
-    // إعداد Replicate API
-    if (!process.env.REPLICATE_API_KEY)
-      throw new ApplicationException("REPLICATE_API_KEY missing", 500);
-
-    const replicateResponse = await axios.post(
-      "https://api.replicate.com/v1/predictions",
-      {
-        version: "a9758c6e0e16d6a8c3f8480c7b2c4f4c9f0c0a9e0f3b6c0a4d1e5c6b7d8f9a0b", // مثال على Stable Diffusion model
-        input: {
-          image: fs.createReadStream(tmpImagePath),
-          prompt: "Generate a clean, studio-style background suitable for product showcase",
-          num_outputs: 4,
-        },
-      },
-      {
-        headers: {
-          Authorization: `Token ${process.env.REPLICATE_API_KEY}`,
-          "Content-Type": "application/json",
-        },
-      },
-    );
-
-    const outputs = replicateResponse.data?.output || [];
-    const savedImages: any[] = [];
-    const projectFolder = process.env.PROJECT_FOLDER || "DefaultProjectFolder";
-
-    for (const base64 of outputs) {
-      const tmpOutputPath = path.join(tmpFolder, `bg-${Date.now()}-${Math.random()}.png`);
-      fs.writeFileSync(tmpOutputPath, Buffer.from(base64, "base64"));
-
-      const { public_id, secure_url } = await uploadSingleFile({
-        fileLocation: tmpOutputPath,
-        storagePathOnCloudinary: `${projectFolder}/${userId}/replicate-bg`,
-      });
-
-      const newImage = await ImageModel.create({
-        user: new mongoose.Types.ObjectId(userId),
-        url: secure_url,
-        storageKey: public_id,
-        filename: "generated-background.png",
-        mimeType: "image/png",
-        size: Buffer.from(base64, "base64").length,
-        dimensions: { width: 0, height: 0 },
-        status: "completed",
-        isPublic: false,
-        aiEdits: [
-          {
-            operation: "custom",
-            provider: "replicate",
-            prompt: "Generated suitable background for product",
-            parameters: { count: 4 },
-            timestamp: new Date(),
-            processingTime: 0,
-            cost: 0,
-          },
-        ],
-      });
-
-      savedImages.push({
-        _id: newImage._id,
-        url: newImage.url,
-        storageKey: newImage.storageKey,
-        aiEdits: newImage.aiEdits,
-      });
-
-      fs.unlinkSync(tmpOutputPath);
+    if (!parentImage) {
+      throw new ApplicationException("Image not found", 404);
     }
 
-    fs.unlinkSync(tmpImagePath);
+    const rawPage = Number(req.query.page ?? 1);
+    const rawSize = Number(req.query.size ?? 20);
+    const page = Number.isFinite(rawPage) && rawPage > 0 ? rawPage : 1;
+    const size = Number.isFinite(rawSize) && rawSize > 0 ? Math.min(rawSize, 100) : 20;
+
+    const { limit, skip } = paginationFunction({ page, size });
+
+    const baseQuery = {
+      parentId: parentImage._id,
+      user: new mongoose.Types.ObjectId(userId),
+      deletedAt: null as null,
+      isBackgroundOnly: true,
+    };
+
+    const [backgroundDocs, totalCount] = await Promise.all([
+      this.imageModel.find(baseQuery).sort({ createdAt: -1 }).skip(skip).limit(limit),
+      this.imageModel.countDocuments(baseQuery),
+    ]);
+
+    const backgrounds = backgroundDocs.map((doc) => this.serializeImageDoc(doc));
 
     return successHandler({
       res,
-      message: "Generated suitable backgrounds successfully (Replicate)",
-      result: savedImages,
+      message: "Backgrounds fetched successfully",
+      result: {
+        parentImage: this.serializeImageDoc(parentImage),
+        backgrounds,
+        totalCount,
+        page,
+        size,
+      },
+    });
+  };
+
+  // ============================ generateSuitableBackground ============================
+  generateSuitableBackground = async (
+    req: Request,
+    res: Response,
+    next: NextFunction,
+  ): Promise<Response> => {
+    const user = res.locals.user;
+    if (!user?._id) {
+      throw new ApplicationException("User not authenticated", 401);
+    }
+
+    const bodyPayload = req.body || {};
+    const imageId = (bodyPayload.imageId as string | undefined) || (req.params as any)?.imageId;
+    const prompt = bodyPayload.prompt as string | undefined;
+    const negativePrompt = bodyPayload.negativePrompt as string | undefined;
+    const stylePreset = bodyPayload.stylePreset as string | undefined;
+    const seedValue = bodyPayload.seed;
+    const widthValue = bodyPayload.width;
+    const heightValue = bodyPayload.height;
+
+    if (!imageId || !mongoose.Types.ObjectId.isValid(imageId)) {
+      throw new ApplicationException("Valid imageId is required", 400);
+    }
+
+    const existingImage = await this.imageModel.findOne({
+      _id: new mongoose.Types.ObjectId(imageId),
+      user: new mongoose.Types.ObjectId(user._id),
+      deletedAt: null,
+    });
+
+    if (!existingImage) {
+      throw new ApplicationException("Image not found", 404);
+    }
+
+    const prepareOptions: PrepareBackgroundContextOptions = {
+      existingImage,
+      widthValue,
+      heightValue,
+      seedValue,
+    };
+    if (typeof prompt !== "undefined") {
+      prepareOptions.prompt = prompt;
+    }
+    if (typeof negativePrompt !== "undefined") {
+      prepareOptions.negativePrompt = negativePrompt;
+    }
+
+    const {
+      resolvedPrompt,
+      resolvedNegativePrompt,
+      promptSourceType,
+      negativePromptSource,
+      derivedTheme,
+      sourceBuffer,
+      stabilityWidth,
+      stabilityHeight,
+      parsedSeed,
+      metadataSummary,
+      visionSummary,
+      visionAttributes,
+      visionBackgroundIdeas,
+      visionSizeHint,
+      visionPositionHint,
+    } = await this.prepareBackgroundGenerationContext(prepareOptions);
+
+    const stabilityStartTime = Date.now();
+    const stabilityOptions: StabilityBackgroundOptions = {
+      productImageBuffer: sourceBuffer,
+      width: stabilityWidth,
+      height: stabilityHeight,
+      prompt: resolvedPrompt,
+    };
+
+    if (resolvedNegativePrompt) {
+      stabilityOptions.negativePrompt = resolvedNegativePrompt;
+    }
+    if (stylePreset && stylePreset.trim()) {
+      stabilityOptions.stylePreset = stylePreset.trim();
+    }
+    if (typeof parsedSeed !== "undefined") {
+      stabilityOptions.seed = parsedSeed;
+    }
+
+    const backgroundBuffer = await generateBackgroundWithStability(stabilityOptions);
+
+    const projectFolder = process.env.PROJECT_FOLDER || "DefaultProjectFolder";
+    const { public_id, secure_url } = await uploadBufferFile({
+      fileBuffer: backgroundBuffer,
+      storagePathOnCloudinary: `${projectFolder}/${user._id}/suitable-backgrounds`,
+    });
+
+    const tagSet = new Set<string>([
+      "genSuitableBackground",
+      "stability-bg",
+      "background-only",
+      derivedTheme,
+    ]);
+    if (stylePreset && stylePreset.trim()) {
+      tagSet.add(stylePreset.trim());
+    }
+    switch (promptSourceType) {
+      case "user":
+        tagSet.add("custom-prompt");
+        break;
+      case "user+vision":
+        tagSet.add("vision-assisted");
+        break;
+      case "vision-auto":
+        tagSet.add("vision-prompt");
+        break;
+      default:
+        tagSet.add("auto-prompt");
+    }
+    if (visionAttributes?.length) {
+      visionAttributes.slice(0, 4).forEach((attr) => {
+        const slug = attr
+          .toLowerCase()
+          .replace(/[^a-z0-9]+/g, "-")
+          .replace(/^-+|-+$/g, "");
+        if (slug) tagSet.add(slug);
+      });
+    }
+    if (visionSizeHint || visionPositionHint) {
+      tagSet.add("placement-aware");
+    }
+
+    const placementNotes: string[] = [];
+    if (visionPositionHint) placementNotes.push(`Position: ${visionPositionHint}`);
+    if (visionSizeHint) placementNotes.push(`Scale: ${visionSizeHint}`);
+
+    let backgroundDescription =
+      visionSummary ||
+      (prompt && prompt.trim()) ||
+      `AI generated ${derivedTheme} background concept via Stability AI.`;
+    if (placementNotes.length) {
+      backgroundDescription = `${backgroundDescription} Placement cues: ${placementNotes.join(
+        " | ",
+      )}.`;
+    }
+
+    const backgroundImage = await this.imageModel.create({
+      user: user._id,
+      url: secure_url,
+      storageKey: public_id,
+      filename: `${existingImage.filename || "image"}-bg-${Date.now()}.png`,
+      originalFilename: `${existingImage.originalFilename || existingImage.filename}-bg-only.png`,
+      mimeType: "image/png",
+      size: backgroundBuffer.length,
+      parentId: existingImage._id,
+      children: [],
+      isOriginal: false,
+      isBackgroundOnly: true,
+      version: (existingImage.version || 1) + 1,
+      aiEdits: [
+        {
+          operation: "text-to-image" as const,
+          provider: "stability-ai" as const,
+          ...(resolvedPrompt ? { prompt: resolvedPrompt } : {}),
+          parameters: {
+            ...(stylePreset && stylePreset.trim() ? { stylePreset: stylePreset.trim() } : {}),
+            width: stabilityWidth,
+            height: stabilityHeight,
+            ...(typeof parsedSeed !== "undefined" ? { seed: parsedSeed } : {}),
+            ...(resolvedNegativePrompt ? { negativePrompt: resolvedNegativePrompt } : {}),
+            promptSource: promptSourceType,
+            ...(negativePromptSource ? { negativePromptSource } : {}),
+            theme: derivedTheme,
+            metadataSummary,
+            backgroundOnly: true,
+            ...(visionSummary ? { visionSummary } : {}),
+            ...(visionAttributes?.length ? { visionAttributes } : {}),
+            ...(visionBackgroundIdeas?.length ? { visionBackgroundIdeas } : {}),
+            ...(visionSizeHint ? { visionSizeHint } : {}),
+            ...(visionPositionHint ? { visionPositionHint } : {}),
+          },
+          timestamp: new Date(),
+          processingTime: Date.now() - stabilityStartTime,
+        },
+      ],
+      status: "completed" as const,
+      tags: Array.from(tagSet),
+      title: existingImage.title
+        ? `${existingImage.title} - background concept`
+        : `${existingImage.filename}-background`,
+      description: backgroundDescription,
+      category: existingImage.category || "product",
+      isPublic: false,
+      views: 0,
+      downloads: 0,
+      dimensions: {
+        width: stabilityWidth,
+        height: stabilityHeight,
+      },
+    });
+
+    return successHandler({
+      res,
+      message: "Background generated successfully",
+      result: {
+        sourceImage: this.serializeImageDoc(existingImage),
+        backgroundImage: this.serializeImageDoc(backgroundImage),
+      },
+    });
+  };
+
+  // ============================ blurImageRegion ============================
+  blurImageRegion = async (req: Request, res: Response, next: NextFunction): Promise<Response> => {
+    const user = res.locals.user;
+    if (!user?._id) {
+      throw new ApplicationException("User not authenticated", 401);
+    }
+
+    const file = req.file as Express.Multer.File | undefined;
+    const body = req.body || {};
+
+    const imageId = body.imageId as string | undefined;
+    const requireImageId = !file;
+
+    if (requireImageId && (!imageId || !mongoose.Types.ObjectId.isValid(imageId))) {
+      throw new ApplicationException("Provide a valid imageId or upload an image", 400);
+    }
+
+    const parseNumber = (value: unknown, field: string) => {
+      if (typeof value === "undefined" || value === null || value === "") {
+        throw new ApplicationException(`${field} is required`, 400);
+      }
+      const parsed = Number(value);
+      if (!Number.isFinite(parsed)) {
+        throw new ApplicationException(`${field} must be a finite number`, 400);
+      }
+      return parsed;
+    };
+
+    const regionLeft = Math.round(parseNumber(body.x, "x"));
+    const regionTop = Math.round(parseNumber(body.y, "y"));
+    const regionWidth = Math.round(parseNumber(body.width, "width"));
+    const regionHeight = Math.round(parseNumber(body.height, "height"));
+    const blurRadiusInput = body.blurRadius;
+    const blurRadius = (() => {
+      if (
+        typeof blurRadiusInput === "undefined" ||
+        blurRadiusInput === null ||
+        blurRadiusInput === ""
+      ) {
+        return 25;
+      }
+      const parsed = Number(blurRadiusInput);
+      if (!Number.isFinite(parsed) || parsed <= 0) {
+        throw new ApplicationException("blurRadius must be a positive number", 400);
+      }
+      return Math.min(Math.max(parsed, 1), 200);
+    })();
+
+    let parentImage: IImage | null = null;
+    let sourceBuffer: Buffer;
+    let sourceMimeType: string | undefined;
+    let sourceFilename: string | undefined;
+    let sourceOriginalFilename: string | undefined;
+
+    if (file) {
+      sourceBuffer = fs.readFileSync(file.path);
+      const originalMetadata = await sharp(sourceBuffer).metadata();
+
+      const { public_id, secure_url } = await uploadSingleFile({
+        fileLocation: file.path,
+        storagePathOnCloudinary: `ImaginoApp/blurImageRegion/${user._id}/originals`,
+      });
+
+      parentImage = await this.imageModel.create({
+        user: user._id,
+        url: secure_url,
+        storageKey: public_id,
+        filename: file.filename,
+        originalFilename: file.originalname,
+        mimeType: file.mimetype,
+        size: file.size,
+        dimensions: {
+          width: originalMetadata.width || 0,
+          height: originalMetadata.height || 0,
+        },
+        children: [],
+        isOriginal: true,
+        version: 1,
+        aiEdits: [],
+        status: "completed" as const,
+        tags: ["blur-region", "original"],
+        title: file.originalname,
+        description: "Original upload for blur operation",
+        category: "other" as const,
+        isPublic: false,
+        views: 0,
+        downloads: 0,
+      });
+
+      sourceMimeType = file.mimetype;
+      sourceFilename = file.filename;
+      sourceOriginalFilename = file.originalname;
+    } else {
+      parentImage = await this.imageModel.findOne({
+        _id: new mongoose.Types.ObjectId(imageId as string),
+        user: new mongoose.Types.ObjectId(user._id),
+        deletedAt: null,
+      });
+
+      if (!parentImage) {
+        throw new ApplicationException("Image not found", 404);
+      }
+
+      sourceBuffer = await this.downloadImageAsBuffer(parentImage.url);
+      sourceMimeType = parentImage.mimeType;
+      sourceFilename = parentImage.filename;
+      sourceOriginalFilename = parentImage.originalFilename || parentImage.filename;
+    }
+
+    const metadata = await sharp(sourceBuffer).metadata();
+    const imageWidth = metadata.width || 0;
+    const imageHeight = metadata.height || 0;
+
+    if (!imageWidth || !imageHeight) {
+      throw new ApplicationException("Unable to determine image dimensions", 500);
+    }
+
+    if (regionWidth <= 0 || regionHeight <= 0) {
+      throw new ApplicationException("width and height must be positive", 400);
+    }
+
+    if (regionLeft < 0 || regionTop < 0) {
+      throw new ApplicationException("x and y must be non-negative", 400);
+    }
+
+    if (regionLeft + regionWidth > imageWidth || regionTop + regionHeight > imageHeight) {
+      throw new ApplicationException("Requested blur region exceeds image bounds", 400);
+    }
+
+    const blurOperationStart = Date.now();
+
+    const blurredSourceBuffer = await sharp(sourceBuffer).blur(blurRadius).toBuffer();
+    const blurredRegionBuffer = await sharp(blurredSourceBuffer)
+      .extract({ left: regionLeft, top: regionTop, width: regionWidth, height: regionHeight })
+      .toBuffer();
+
+    const composite = sharp(sourceBuffer).composite([
+      { input: blurredRegionBuffer, left: regionLeft, top: regionTop },
+    ]);
+
+    type SupportedCompositeFormat = "jpeg" | "png" | "webp" | "avif";
+
+    const targetFormat: SupportedCompositeFormat = (() => {
+      const normalized = (metadata.format || "png").toLowerCase();
+      if (["jpeg", "jpg"].includes(normalized)) return "jpeg" as const;
+      if (normalized === "webp") return "webp" as const;
+      if (normalized === "avif") return "avif" as const;
+      return "png" as const;
+    })();
+
+    let formattedPipeline: sharp.Sharp;
+    switch (targetFormat) {
+      case "jpeg":
+        formattedPipeline = composite.jpeg({ quality: 95 });
+        break;
+      case "webp":
+        formattedPipeline = composite.webp({ quality: 95 });
+        break;
+      case "avif":
+        formattedPipeline = composite.avif({ quality: 80 });
+        break;
+      default:
+        formattedPipeline = composite.png();
+    }
+
+    const blurredCompositeBuffer = await formattedPipeline.toBuffer();
+
+    const formatDetails: Record<SupportedCompositeFormat, { mime: string; extension: string }> = {
+      jpeg: { mime: "image/jpeg", extension: "jpg" },
+      png: { mime: "image/png", extension: "png" },
+      webp: { mime: "image/webp", extension: "webp" },
+      avif: { mime: "image/avif", extension: "avif" },
+    };
+
+    const outputDetails = formatDetails[targetFormat];
+    const parsedName = path.parse(sourceOriginalFilename || sourceFilename || "image");
+    const blurredFilename = `${parsedName.name || "image"}-blur-${Date.now()}.${outputDetails.extension}`;
+
+    const projectFolder = process.env.PROJECT_FOLDER || "DefaultProjectFolder";
+    const { public_id: blurredPublicId, secure_url: blurredSecureUrl } = await uploadBufferFile({
+      fileBuffer: blurredCompositeBuffer,
+      storagePathOnCloudinary: `${projectFolder}/${user._id}/blurred-regions`,
+    });
+
+    const blurredImage = await this.imageModel.create({
+      user: user._id,
+      url: blurredSecureUrl,
+      storageKey: blurredPublicId,
+      filename: blurredFilename,
+      originalFilename: `${parsedName.name || "image"}-blurred.${outputDetails.extension}`,
+      mimeType: outputDetails.mime,
+      size: blurredCompositeBuffer.length,
+      parentId: parentImage?._id || null,
+      children: [],
+      isOriginal: false,
+      version: parentImage ? (parentImage.version || 1) + 1 : 1,
+      aiEdits: [
+        {
+          operation: "custom" as const,
+          provider: "custom" as const,
+          prompt: "Apply localized blur",
+          parameters: {
+            blurRegion: {
+              x: regionLeft,
+              y: regionTop,
+              width: regionWidth,
+              height: regionHeight,
+            },
+            blurRadius,
+            sourceImageId: parentImage?._id,
+          },
+          timestamp: new Date(),
+          processingTime: Date.now() - blurOperationStart,
+        },
+      ],
+      status: "completed" as const,
+      tags: ["blur-region", "localized-blur"],
+      title: parentImage?.title
+        ? `${parentImage.title} - blurred`
+        : `${parsedName.name || "image"} - blurred region`,
+      description: `Blurred region ${regionWidth}x${regionHeight} at (${regionLeft}, ${regionTop})`,
+      category: parentImage?.category || "other",
+      isPublic: false,
+      views: 0,
+      downloads: 0,
+      dimensions: {
+        width: imageWidth,
+        height: imageHeight,
+      },
+    });
+
+    if (parentImage?._id) {
+      await this.imageModel.findByIdAndUpdate(parentImage._id, {
+        $addToSet: { children: blurredImage._id },
+      });
+    }
+
+    if (file && fs.existsSync(file.path)) {
+      fs.unlinkSync(file.path);
+    }
+
+    return successHandler({
+      res,
+      message: "Image blurred successfully",
+      result: {
+        originalImage: parentImage ? this.serializeImageDoc(parentImage) : null,
+        blurredImage: this.serializeImageDoc(blurredImage),
+      },
     });
   };
 
@@ -322,7 +1009,208 @@ export class ImageServices implements IImageServices {
     res: Response,
     next: NextFunction,
   ): Promise<Response> => {
-    return successHandler({ res });
+    const user = res.locals.user;
+    if (!user?._id) {
+      throw new ApplicationException("User not authenticated", 401);
+    }
+
+    const bodyPayload = req.body || {};
+    const productImageId = bodyPayload.productImageId as string | undefined;
+    const backgroundImageId = bodyPayload.backgroundImageId as string | undefined;
+    const backgroundFile = req.file as Express.Multer.File | undefined;
+
+    if (!productImageId || !mongoose.Types.ObjectId.isValid(productImageId)) {
+      throw new ApplicationException("Valid productImageId is required", 400);
+    }
+
+    if (!backgroundImageId && !backgroundFile) {
+      throw new ApplicationException(
+        "Provide backgroundImageId or upload a backgroundImage file",
+        400,
+      );
+    }
+
+    if (backgroundImageId && !mongoose.Types.ObjectId.isValid(backgroundImageId)) {
+      throw new ApplicationException("Invalid backgroundImageId", 400);
+    }
+
+    const userObjectId = new mongoose.Types.ObjectId(user._id);
+
+    const transparentImage = await this.imageModel.findOne({
+      _id: new mongoose.Types.ObjectId(productImageId),
+      user: userObjectId,
+      deletedAt: null,
+    });
+
+    if (!transparentImage) {
+      throw new ApplicationException("Transparent product image not found", 404);
+    }
+
+    const composeStartTime = Date.now();
+    const productBuffer = await this.downloadImageAsBuffer(transparentImage.url);
+    const productMetadata = await sharp(productBuffer).metadata();
+
+    let backgroundBuffer: Buffer;
+    let backgroundImageDoc: IImage | null = null;
+
+    if (backgroundImageId) {
+      backgroundImageDoc = await this.imageModel.findOne({
+        _id: new mongoose.Types.ObjectId(backgroundImageId),
+        user: userObjectId,
+        deletedAt: null,
+      });
+
+      if (!backgroundImageDoc) {
+        throw new ApplicationException("Background image not found", 404);
+      }
+
+      backgroundBuffer = await this.downloadImageAsBuffer(backgroundImageDoc.url);
+    } else if (backgroundFile?.path) {
+      backgroundBuffer = fs.readFileSync(backgroundFile.path);
+    } else {
+      throw new ApplicationException("Unable to resolve background image", 400);
+    }
+
+    const backgroundMetadata = await sharp(backgroundBuffer).metadata();
+    const backgroundWidth = backgroundMetadata.width || productMetadata.width || 1024;
+    const backgroundHeight = backgroundMetadata.height || productMetadata.height || 1024;
+
+    const promptSeed =
+      typeof (transparentImage as any).toObject === "function"
+        ? ((transparentImage as any).toObject() as Partial<IImage>)
+        : (transparentImage as unknown as Partial<IImage>);
+    const { theme: derivedTheme } = buildBackgroundPrompt(promptSeed);
+
+    const resizedProductBuffer = await sharp(productBuffer)
+      .resize({
+        width: Math.min(backgroundWidth, productMetadata.width || backgroundWidth),
+        height: Math.min(backgroundHeight, productMetadata.height || backgroundHeight),
+        fit: "inside",
+        withoutEnlargement: true,
+      })
+      .png()
+      .toBuffer();
+
+    const resizedProductMetadata = await sharp(resizedProductBuffer).metadata();
+
+    const placement = calculateProductPlacement({
+      backgroundWidth,
+      backgroundHeight,
+      productWidth:
+        resizedProductMetadata.width ||
+        Math.min(backgroundWidth, productMetadata.width || backgroundWidth),
+      productHeight:
+        resizedProductMetadata.height ||
+        Math.min(backgroundHeight, productMetadata.height || backgroundHeight),
+      theme: derivedTheme,
+    });
+
+    const overlayOptions: sharp.OverlayOptions =
+      placement.mode === "custom"
+        ? { input: resizedProductBuffer, left: placement.left, top: placement.top }
+        : { input: resizedProductBuffer, gravity: "center" };
+
+    const compositedBuffer = await sharp(backgroundBuffer)
+      .resize({ width: backgroundWidth, height: backgroundHeight, fit: "cover" })
+      .composite([overlayOptions])
+      .png()
+      .toBuffer();
+
+    if (backgroundFile?.path && fs.existsSync(backgroundFile.path)) {
+      fs.unlinkSync(backgroundFile.path);
+    }
+
+    const projectFolder = process.env.PROJECT_FOLDER || "DefaultProjectFolder";
+    const { public_id, secure_url } = await uploadBufferFile({
+      fileBuffer: compositedBuffer,
+      storagePathOnCloudinary: `${projectFolder}/${user._id}/selected-backgrounds`,
+    });
+
+    const tagSet = new Set<string>([
+      "genImgWithSelectedBackground",
+      derivedTheme,
+      "manual-background",
+    ]);
+
+    if (backgroundImageDoc?.tags?.length) {
+      backgroundImageDoc.tags.slice(0, 3).forEach((tag) => tagSet.add(tag));
+    }
+
+    const placementNotes: string[] = [];
+    if (placement.mode === "custom") {
+      placementNotes.push(`Position left=${placement.left}, top=${placement.top}`);
+    } else {
+      placementNotes.push("Centered placement");
+    }
+
+    const generatedImage = await this.imageModel.create({
+      user: user._id,
+      url: secure_url,
+      storageKey: public_id,
+      filename: `${transparentImage.filename || "image"}-selected-bg-${Date.now()}.png`,
+      originalFilename: `${
+        transparentImage.originalFilename || transparentImage.filename
+      }-selected-bg.png`,
+      mimeType: "image/png",
+      size: compositedBuffer.length,
+      parentId: transparentImage._id,
+      children: [],
+      isOriginal: false,
+      version: (transparentImage.version || 1) + 1,
+      aiEdits: [
+        {
+          operation: "custom" as const,
+          provider: "custom" as const,
+          prompt: "Composite product onto selected background",
+          parameters: {
+            backgroundSource: backgroundImageDoc ? "existing-image" : "uploaded-file",
+            ...(backgroundImageDoc ? { backgroundImageId: backgroundImageDoc._id } : {}),
+            placementMode: placement.mode,
+            ...(placement.mode === "custom"
+              ? { placementOffsets: { left: placement.left, top: placement.top } }
+              : {}),
+            theme: derivedTheme,
+          },
+          timestamp: new Date(),
+          processingTime: Date.now() - composeStartTime,
+        },
+      ],
+      status: "completed" as const,
+      tags: Array.from(tagSet),
+      title: transparentImage.title
+        ? `${transparentImage.title} - selected background`
+        : `${transparentImage.filename}-selected-background`,
+      description: backgroundImageDoc?.description
+        ? `Composite using background: ${backgroundImageDoc.description}`
+        : "Composite created with user-selected background image",
+      category: transparentImage.category || "product",
+      isPublic: false,
+      views: 0,
+      downloads: 0,
+      dimensions: {
+        width: backgroundWidth,
+        height: backgroundHeight,
+      },
+    });
+
+    await this.imageModel.findByIdAndUpdate(transparentImage._id, {
+      $addToSet: { children: generatedImage._id },
+    });
+
+    const resultPayload: Record<string, unknown> = {
+      transparentImage: this.serializeImageDoc(transparentImage),
+      generatedImage: this.serializeImageDoc(generatedImage),
+    };
+
+    if (backgroundImageDoc) {
+      resultPayload.backgroundImage = this.serializeImageDoc(backgroundImageDoc);
+    }
+
+    return successHandler({
+      res,
+      message: "Background applied successfully",
+      result: resultPayload,
+    });
   };
 
   // ============================ genImgWithNewBackground ============================
@@ -362,203 +1250,37 @@ export class ImageServices implements IImageServices {
       throw new ApplicationException("Image not found", 404);
     }
 
-    const promptSourceImage =
-      typeof (existingImage as any).toObject === "function"
-        ? ((existingImage as any).toObject() as Partial<IImage>)
-        : (existingImage as unknown as Partial<IImage>) || {};
-
-    const fallbackPromptPlan = buildBackgroundPrompt(promptSourceImage, prompt);
-    let resolvedPrompt = fallbackPromptPlan.prompt;
-    const derivedTheme: BackgroundTheme = fallbackPromptPlan.theme;
-    let promptSourceType: BackgroundPromptSource = fallbackPromptPlan.source;
-
-    let resolvedNegativePrompt =
-      negativePrompt && negativePrompt.trim()
-        ? negativePrompt.trim()
-        : buildDefaultNegativePrompt(derivedTheme);
-
-    const sourceBuffer = await this.downloadImageAsBuffer(existingImage.url);
-    const sourceMetadata = await sharp(sourceBuffer).metadata();
-
-    const metadataSummaryParts: string[] = [];
-    if (existingImage.title) metadataSummaryParts.push(`Title: ${existingImage.title}`);
-    if (existingImage.description)
-      metadataSummaryParts.push(`Description: ${existingImage.description}`);
-    if (existingImage.category) metadataSummaryParts.push(`Category: ${existingImage.category}`);
-    if (Array.isArray(existingImage.tags) && existingImage.tags.length) {
-      metadataSummaryParts.push(`Tags: ${existingImage.tags.slice(0, 8).join(", ")}`);
-    }
-    metadataSummaryParts.push(
-      `Theme guess: ${derivedTheme} | Dimensions: ${sourceMetadata.width || "?"}x${sourceMetadata.height || "?"}`,
-    );
-    const metadataSummary = metadataSummaryParts.join(" | ");
-
-    const productAnalysis = await generateProductPromptFromImage({
-      imageBuffer: sourceBuffer,
-      mimeType: existingImage.mimeType,
-      metadataText: metadataSummary,
-      userPrompt: prompt,
-    });
-
-    let visionSummary: string | undefined;
-    let visionAttributes: string[] | undefined;
-    let visionBackgroundIdeas: string[] | undefined;
-    let visionSizeHint: string | undefined;
-    let visionPositionHint: string | undefined;
-    let negativePromptSource: "user" | "vision" | "auto" | undefined =
-      negativePrompt && negativePrompt.trim()
-        ? "user"
-        : resolvedNegativePrompt
-          ? "auto"
-          : undefined;
-
-    if (productAnalysis) {
-      const combinedPromptParts: string[] = [];
-      if (prompt && prompt.trim()) combinedPromptParts.push(prompt.trim());
-      if (productAnalysis.prompt && productAnalysis.prompt.trim()) {
-        combinedPromptParts.push(productAnalysis.prompt.trim());
-      }
-      if (!combinedPromptParts.length && resolvedPrompt) {
-        combinedPromptParts.push(resolvedPrompt);
-      }
-      const combinedPrompt = combinedPromptParts.join("\n\n").trim();
-      if (combinedPrompt) {
-        resolvedPrompt = combinedPrompt;
-        promptSourceType = prompt && prompt.trim() ? "user+vision" : "vision-auto";
-      }
-
-      if (!negativePrompt || !negativePrompt.trim()) {
-        const visionNegative = productAnalysis.negativePrompt?.trim();
-        if (visionNegative) {
-          resolvedNegativePrompt = visionNegative;
-          negativePromptSource = "vision";
-        } else if (!resolvedNegativePrompt) {
-          resolvedNegativePrompt = buildDefaultNegativePrompt(derivedTheme);
-          negativePromptSource = resolvedNegativePrompt ? "auto" : undefined;
-        }
-      }
-
-      visionSummary = productAnalysis.summary?.trim() || undefined;
-      visionAttributes = Array.isArray(productAnalysis.attributes)
-        ? productAnalysis.attributes.filter((attr) => typeof attr === "string" && attr.trim())
-        : undefined;
-      if (visionAttributes) {
-        visionAttributes = visionAttributes.map((attr) => attr.trim());
-      }
-      visionBackgroundIdeas = Array.isArray(productAnalysis.backgroundIdeas)
-        ? productAnalysis.backgroundIdeas.filter((idea) => typeof idea === "string" && idea.trim())
-        : undefined;
-      if (visionBackgroundIdeas) {
-        visionBackgroundIdeas = visionBackgroundIdeas.map((idea) => idea.trim());
-      }
-
-      visionSizeHint = productAnalysis.sizeHint?.trim() || undefined;
-      visionPositionHint = productAnalysis.positionHint?.trim() || undefined;
-
-      const placementGuidanceParts: string[] = [];
-      if (visionSizeHint) {
-        placementGuidanceParts.push(`Product scale guidance: ${visionSizeHint}`);
-      }
-      if (visionPositionHint) {
-        placementGuidanceParts.push(`Product placement guidance: ${visionPositionHint}`);
-      }
-
-      if (
-        placementGuidanceParts.length &&
-        !/foreground placement guidance:/i.test(resolvedPrompt)
-      ) {
-        resolvedPrompt = `${resolvedPrompt}\n\nForeground placement guidance: ${placementGuidanceParts.join(
-          " | ",
-        )}. Align props, camera perspective, and horizon lines so the product feels naturally integrated.`;
-      }
-
-      if (!negativePromptSource) {
-        negativePromptSource = negativePrompt && negativePrompt.trim() ? "user" : undefined;
-      }
-    }
-
-    if (!negativePromptSource) {
-      negativePromptSource =
-        negativePrompt && negativePrompt.trim()
-          ? "user"
-          : productAnalysis?.negativePrompt
-            ? "vision"
-            : resolvedNegativePrompt
-              ? "auto"
-              : undefined;
-    }
-
-    const parseDimension = (value: unknown, fallback: number) => {
-      if (typeof value === "undefined" || value === null || value === "") {
-        return fallback;
-      }
-      const parsed = Number(value);
-      if (Number.isNaN(parsed) || parsed <= 0) {
-        throw new ApplicationException("width/height must be positive numbers", 400);
-      }
-      return parsed;
+    const prepareOptions: PrepareBackgroundContextOptions = {
+      existingImage,
+      widthValue,
+      heightValue,
+      seedValue,
     };
+    if (typeof prompt !== "undefined") {
+      prepareOptions.prompt = prompt;
+    }
+    if (typeof negativePrompt !== "undefined") {
+      prepareOptions.negativePrompt = negativePrompt;
+    }
 
-    const allowedTextToImageDimensions = [
-      { width: 1024, height: 1024 },
-      { width: 1152, height: 896 },
-      { width: 1216, height: 832 },
-      { width: 1344, height: 768 },
-      { width: 1536, height: 640 },
-      { width: 640, height: 1536 },
-      { width: 768, height: 1344 },
-      { width: 832, height: 1216 },
-      { width: 896, height: 1152 },
-    ];
-
-    const normalizeForStability = (width: number, height: number) => {
-      if (!Number.isFinite(width) || width <= 0 || !Number.isFinite(height) || height <= 0) {
-        return { width: 1024, height: 1024 };
-      }
-
-      const requestedRatio = width / height;
-      if (!allowedTextToImageDimensions.length) {
-        return { width: 1024, height: 1024 };
-      }
-
-      let best: { width: number; height: number } = { width: 1024, height: 1024 };
-      let bestScore = Number.POSITIVE_INFINITY;
-
-      for (const option of allowedTextToImageDimensions) {
-        const optionRatio = option.width / option.height;
-        const ratioDiff = Math.abs(optionRatio - requestedRatio);
-        const widthDiff = Math.abs(option.width - width) / option.width;
-        const heightDiff = Math.abs(option.height - height) / option.height;
-        const orientationPenalty =
-          requestedRatio > 1 && option.width < option.height
-            ? 0.25
-            : requestedRatio < 1 && option.width > option.height
-              ? 0.25
-              : 0;
-        const score = ratioDiff * 2 + widthDiff + heightDiff + orientationPenalty;
-
-        if (score < bestScore) {
-          bestScore = score;
-          best = option;
-        }
-      }
-
-      return best;
-    };
-
-    const fallbackWidth = sourceMetadata.width || 1024;
-    const fallbackHeight = sourceMetadata.height || fallbackWidth || 1024;
-    const targetWidth = parseDimension(widthValue, fallbackWidth);
-    const targetHeight = parseDimension(heightValue, fallbackHeight);
-    const { width: stabilityWidth, height: stabilityHeight } = normalizeForStability(
-      targetWidth,
-      targetHeight,
-    );
-
-    const numericSeed =
-      typeof seedValue !== "undefined" && seedValue !== "" ? Number(seedValue) : undefined;
-    const parsedSeed =
-      typeof numericSeed === "number" && !Number.isNaN(numericSeed) ? numericSeed : undefined;
+    const {
+      resolvedPrompt,
+      resolvedNegativePrompt,
+      promptSourceType,
+      negativePromptSource,
+      derivedTheme,
+      sourceBuffer,
+      sourceMetadata,
+      stabilityWidth,
+      stabilityHeight,
+      parsedSeed,
+      metadataSummary,
+      visionSummary,
+      visionAttributes,
+      visionBackgroundIdeas,
+      visionSizeHint,
+      visionPositionHint,
+    } = await this.prepareBackgroundGenerationContext(prepareOptions);
 
     const stabilityStartTime = Date.now();
     const stabilityOptions: StabilityBackgroundOptions = {
@@ -1021,16 +1743,20 @@ export class ImageServices implements IImageServices {
   ): Promise<Response> => {
     const user = res.locals.user;
     const file = req.file;
-    // step: file existence
+    const { angle } = req.body;
+    // step: file and angle existence
     if (!file) {
       throw new ApplicationException("file is required", 400);
+    }
+    if (!angle) {
+      return successHandler({ res, message: "Please send angle", status: 400 });
     }
     // step: store image in cloudinary and db
     const { public_id, secure_url } = await uploadSingleFile({
       fileLocation: (file as any).path,
       storagePathOnCloudinary: `ImaginoApp/genImgWithNewDimension/${user._id}`,
     });
-    const image = await this.imageModel.create({
+    const originalImage = await this.imageModel.create({
       user: user._id,
       url: secure_url,
       storageKey: public_id,
@@ -1052,80 +1778,75 @@ export class ImageServices implements IImageServices {
       downloads: 0,
     });
     // step: use ai to gen new images with new dimension
-    const newImages = await genImgWithNewDimensionFn(file.path);
-    // step: store new images in cloudinary and db
-    const storedImages: any = [];
+    const newAngleImageBuffer = await genImgWithNewDimensionFn(file, angle);
 
-    for (const newImage of newImages) {
-      try {
-        // Convert base64 to buffer if needed
-        const imageBuffer = Buffer.from(newImage.image, "base64");
-        const tempImagePath = `${file.path}-${newImage.viewType}`;
-        fs.writeFileSync(tempImagePath, imageBuffer);
-
-        // sotre in cloudinary
-        const { public_id: newPublicId, secure_url: newSecureUrl } = await uploadSingleFile({
-          fileLocation: tempImagePath,
-          storagePathOnCloudinary: `ImaginoApp/genImgWithNewDimension/${user._id}/${newImage.viewType}`,
-        });
-
-        // store in db
-        const childImage = await this.imageModel.create({
-          user: user._id,
-          url: newSecureUrl,
-          storageKey: newPublicId,
-          filename: `${file.filename}-${newImage.viewType}`,
-          originalFilename: `${file.originalname}-${newImage.viewType}`,
-          mimeType: file.mimetype,
-          size: imageBuffer.length,
-          parentId: image._id,
-          children: [],
-          isOriginal: false,
-          version: 1,
-          aiEdits: [
-            {
-              operation: "image-to-image" as const,
-              provider: "custom" as const,
-              prompt: `Generate ${newImage.viewType} view of product`,
-              parameters: {
-                viewType: newImage.viewType,
-                description: newImage.description,
-                confidence: newImage.confidence || 0.92,
-              },
-              timestamp: new Date(),
-              processingTime: 0,
-            },
-          ],
-          status: "completed" as const,
-          tags: ["genImgWithNewDimension", newImage.viewType],
-          title: `${file.filename} - ${newImage.viewType}`,
-          description: newImage.description,
-          category: "product" as const,
-          isPublic: false,
-          views: 0,
-          downloads: 0,
-        });
-
-        storedImages.push(childImage);
-
-        // Clean up temp file
-        fs.unlinkSync(tempImagePath);
-      } catch (error) {
-        console.error(`Error storing ${newImage.viewType} image:`, error);
-      }
+    // step: Create a temporary path for the new angle image to upload it
+    const newAngleFilename = `newAngle-${Date.now()}-${file.filename}`;
+    const tempNewAnglePath = `${file.path}-new angle`;
+    if (!newAngleImageBuffer) {
+      return successHandler({ res, message: "Failed to generate new angle image", status: 500 });
     }
 
-    // Update parent image with children references
-    await this.imageModel.findByIdAndUpdate(image._id, {
-      children: storedImages.map((img: any) => img._id),
+    fs.writeFileSync(tempNewAnglePath, newAngleImageBuffer);
+
+    // step: Store new angle image in Cloudinary
+    const { public_id: newPublicId, secure_url: newSecureUrl } = await uploadSingleFile({
+      fileLocation: tempNewAnglePath,
+      storagePathOnCloudinary: `ImaginoApp/genInhancedQuality/${user._id}/new angle`,
     });
+
+    // step: Store new angle image in DB (as child of original)
+    const newAngleImage = await this.imageModel.create({
+      user: user._id,
+      url: newSecureUrl,
+      storageKey: newPublicId,
+      filename: newAngleFilename,
+      originalFilename: `enhanced-${file.originalname}`,
+      mimeType: file.mimetype,
+      size: newAngleImageBuffer.length,
+      parentId: originalImage._id,
+      children: [],
+      isOriginal: false,
+      version: 1, // Will auto-increment due to pre-save hook logic if configured
+      aiEdits: [
+        {
+          operation: "enhance" as const, // Ensure this enum exists in your schema
+          provider: "custom" as const, // or "google"
+          prompt: "Enhance image quality and resolution",
+          parameters: {
+            model: "gemini-flash",
+            improvement: "quality-upscale",
+          },
+          timestamp: new Date(),
+          processingTime: 0,
+        },
+      ],
+      status: "completed" as const,
+      tags: ["enhanced", "genAI", "high-quality"],
+      title: `Enhanced - ${file.originalname}`,
+      description: "AI Enhanced version of the original image",
+      category: "other" as const,
+      isPublic: false,
+      views: 0,
+      downloads: 0,
+    });
+
+    // step: Update parent image with child reference
+    await this.imageModel.findByIdAndUpdate(originalImage._id, {
+      $addToSet: { children: newAngleImage._id },
+    });
+
+    // step: Cleanup file system (Temp files)
+    // Delete the original multer upload
+    if (fs.existsSync(file.path)) fs.unlinkSync(file.path);
+    // step: Delete the generated temp file
+    if (fs.existsSync(tempNewAnglePath)) fs.unlinkSync(tempNewAnglePath);
 
     return successHandler({
       res,
       result: {
-        originalImage: image,
-        generatedImages: storedImages,
-        totalGenerated: storedImages.length,
+        original: originalImage,
+        enhanced: newAngleImage,
       },
     });
   };

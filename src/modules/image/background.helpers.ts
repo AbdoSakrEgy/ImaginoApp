@@ -102,37 +102,44 @@ const BACKGROUND_THEME_PROMPTS: Record<
   vehicle: {
     opening: "Cinematic automotive hero shot of {descriptor}",
     setting: "positioned on a modern rooftop parking deck with moody skyline bokeh",
-    details: "wet asphalt reflections, dramatic rim lighting, no people, no signage",
+    details:
+      "wet asphalt reflections, dramatic rim lighting, no people, no signage, leave a clean empty parking bay ready for the hero product",
   },
   beauty: {
     opening: "Premium beauty campaign still of {descriptor}",
     setting: "arranged on marble and glass vanity props with diffused daylight",
-    details: "soft pastels, floating mist, no other product categories, hyperreal textures",
+    details:
+      "soft pastels, floating mist, no other product categories, hyperreal textures, maintain an empty pedestal pocket awaiting the hero product",
   },
   fashion: {
     opening: "Editorial fashion product scene for {descriptor}",
     setting: "styled on sculpted plinths inside a minimal studio with rim-lit gradients",
-    details: "floating fabric motion, subtle shadow drop, no competing wardrobe",
+    details:
+      "floating fabric motion, subtle shadow drop, no competing wardrobe, keep a vacant plinth for the foreground piece",
   },
   food: {
     opening: "Gourmet food photography of {descriptor}",
     setting: "placed on rustic tabletop with natural window light and depth-rich props",
-    details: "steam, crumbs, utensils, no packaged cosmetics or tech",
+    details:
+      "steam, crumbs, utensils, no packaged cosmetics or tech, leave a clean plating zone open for the hero dish",
   },
   tech: {
     opening: "Futuristic tech showcase for {descriptor}",
     setting: "on anodized aluminum surface with neon rim lighting and volumetric haze",
-    details: "floating HUD elements, bokeh particles, no organic skincare items",
+    details:
+      "floating HUD elements, bokeh particles, no organic skincare items, reserve an empty illuminated pad where the product will sit",
   },
   furniture: {
     opening: "Interior design lifestyle shot of {descriptor}",
     setting: "inside a curated living space with layered lighting and tactile materials",
-    details: "area rug shadows, architectural light streaks, no unrelated cosmetics",
+    details:
+      "area rug shadows, architectural light streaks, no unrelated cosmetics, keep a cleared zone on the floor or platform for the hero furnishing",
   },
   generic: {
     opening: "Lifestyle hero scene for {descriptor}",
     setting: "set on a premium stylized stage with cinematic depth",
-    details: "soft studio lighting, DSLR depth of field, practical props that support the product",
+    details:
+      "soft studio lighting, DSLR depth of field, practical props that support the product, maintain a spotless open area awaiting the foreground item",
   },
 };
 

@@ -29,6 +29,12 @@ const imageSchema = new Schema<IImage>(
       type: Boolean,
       default: true,
     },
+    // is background only image
+    isBackgroundOnly: {
+      type: Boolean,
+      default: false,
+    },
+    // Version number for edits
     version: {
       type: Number,
       default: 1,
@@ -151,7 +157,7 @@ const imageSchema = new Schema<IImage>(
     timestamps: true,
     toJSON: { virtuals: true },
     toObject: { virtuals: true },
-  }
+  },
 );
 
 // Indexes for common queries

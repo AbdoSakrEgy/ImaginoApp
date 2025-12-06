@@ -56,7 +56,7 @@ export const generateProductPromptFromImage = async (
               background_prompt: {
                 type: "string",
                 description:
-                  "Positive text prompt for generating a custom background tailored to the detected product. Explicitly call out how large the product should feel in frame and where it should sit relative to the scene (e.g., 'hero scale centered in lower third').",
+                  "Positive text prompt for generating a custom background tailored to the detected product. Explicitly call out how large the product should feel in frame, where it should sit relative to the scene (e.g., 'hero scale centered in lower third'), and describe the deliberately empty staging pocket where the real product will be composited so no other hero object sits there.",
               },
               summary: {
                 type: "string",
@@ -65,7 +65,7 @@ export const generateProductPromptFromImage = async (
               negative_prompt: {
                 type: "string",
                 description:
-                  "Things to avoid in the generated background (unrelated props, clutter, etc.).",
+                  "Things to avoid in the generated background (unrelated props, clutter, duplicate hero objects, anything occupying the reserved empty space, etc.).",
               },
               background_ideas: {
                 type: "array",
@@ -98,7 +98,7 @@ export const generateProductPromptFromImage = async (
         {
           role: "system",
           content:
-            "You are a senior e-commerce art director. Analyze transparent product cutouts and craft highly descriptive, concise prompts for photorealistic background generation.",
+            "You are a senior e-commerce art director. Analyze transparent product cutouts and craft highly descriptive, concise prompts for photorealistic background generation that preserve a clear empty pocket where the product belongs.",
         },
         {
           role: "user",
@@ -107,7 +107,7 @@ export const generateProductPromptFromImage = async (
               type: "text",
               text: [
                 "Study this isolated product image and return JSON with:",
-                "1) background_prompt: A vivid positive prompt describing composition, props, lighting, materials, and camera cues.",
+                "1) background_prompt: A vivid positive prompt describing composition, props, lighting, materials, camera cues, and the empty staging pocket meant for the product.",
                 "2) summary: Sentence summary of the product, its features, and pose.",
                 "3) negative_prompt: Optional comma-separated list of things to suppress.",
                 "4) background_ideas: Optional list of short scene titles.",
@@ -115,6 +115,7 @@ export const generateProductPromptFromImage = async (
                 "6) object_scale_hint: Describe the relative size coverage (use percentages of frame, synonyms like 'occupies most of frame').",
                 "7) object_position_hint: Describe where the product sits (centered, lower third, tilted, etc.).",
                 "8) Ensure the background_prompt itself ends with a clause that reinforces the required product scale and placement.",
+                "9) Describe the open staging zone that must stay unobstructed for the real product; avoid adding placeholder products in that area.",
                 "Existing metadata:",
                 metadataSnippet,
                 userPrompt?.trim()
