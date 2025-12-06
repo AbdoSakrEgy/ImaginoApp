@@ -25,15 +25,6 @@ router.get("/getall", auth, imageServices.getAllImages);
 router.delete("/delete/:imageId", auth, imageServices.deleteImage);
 router.post("/gen-img-without-background",auth,upload.single("imageFile"),imageServices.uploadImageWithoutBackground,);
 router.post("/gen-suitable-background", auth, imageServices.generateSuitableBackground);
-
-router.post(
-  "/convert-image-to-anime-style",
-  auth,  
-  multerUpload({
-    sendedFileDest: "ai-style", 
-    sendedFileType: ["image/jpeg", "image/png", "image/webp"],
-  }).single("image"),
-  imageServices.convertYourImageToStyle
-);
+router.post("/convert-image-to-anime-style",auth,multerUpload({sendedFileDest: "ai-style",sendedFileType: ["image/jpeg", "image/png", "image/webp"],}).single("image"),imageServices.convertYourImageToStyle);
 
 export default router;
