@@ -1,3 +1,9 @@
+import sharp from "sharp";
+import axios from "axios";
+import os from "os";
+import * as fs from "fs";
+import path from "path";
+import mongoose from "mongoose";
 import { IImage } from "./../../types/image.module.types";
 import { ImageModel } from "./image.model";
 import { successHandler } from "../../utils/successHandler";
@@ -5,160 +11,25 @@ import { NextFunction, Request, Response } from "express";
 import { ApplicationException } from "../../utils/Errors";
 import { IImageServices } from "../../types/image.module.types";
 import { genImgWithNewDimensionFn } from "../../utils/GenAI/gen.img.with.new.dimension";
-import * as fs from "fs";
-import os from "os";
 import { genInhancedQualityImgFn } from "../../utils/GenAI/gen.inhanced.quality.img";
 import { genMergeLogoToImgFn } from "../../utils/GenAI/gen-merge-logo-to-img";
 import { paginationFunction } from "../../utils/pagination";
 import { destroySingleFile, uploadSingleFile } from "../../utils/cloudinary/cloudinary.service";
-import mongoose from "mongoose";
 import { removeBackgroundFromImageBase64 } from "../../utils/ai/removeBackground";
-import sharp from "sharp";
-import axios from "axios";
 import {
   generateBackgroundWithStability,
   StabilityBackgroundOptions,
 } from "../../utils/ai/stability";
 import { extractTextFromImgFn } from "../../utils/GenAI/extract.text.from.img";
 import { recognizeItemsInImgFn } from "../../utils/GenAI/recognize.items.in.image";
-
-import path from "path";
-type BackgroundTheme = "vehicle" | "beauty" | "fashion" | "food" | "tech" | "furniture" | "generic";
-
-const THEME_KEYWORDS: Array<{ theme: BackgroundTheme; keywords: string[] }> = [
-  {
-    theme: "vehicle",
-    keywords: [
-      "car",
-      "vehicle",
-      "automotive",
-      "auto",
-      "motorcycle",
-      "bike",
-      "truck",
-      "suv",
-      "sedan",
-      "coupe",
-      "roadster",
-      "van",
-      "convertible",
-    ],
-  },
-  {
-    theme: "beauty",
-    keywords: [
-      "skin",
-      "skincare",
-      "cosmetic",
-      "makeup",
-      "beauty",
-      "serum",
-      "cream",
-      "lotion",
-      "perfume",
-      "fragrance",
-    ],
-  },
-  {
-    theme: "fashion",
-    keywords: [
-      "shoe",
-      "sneaker",
-      "boot",
-      "bag",
-      "apparel",
-      "jacket",
-      "dress",
-      "hoodie",
-      "fashion",
-      "wear",
-    ],
-  },
-  {
-    theme: "food",
-    keywords: [
-      "food",
-      "drink",
-      "beverage",
-      "coffee",
-      "tea",
-      "snack",
-      "dessert",
-      "kitchen",
-      "plate",
-    ],
-  },
-  {
-    theme: "tech",
-    keywords: [
-      "phone",
-      "laptop",
-      "tablet",
-      "speaker",
-      "camera",
-      "tech",
-      "gadget",
-      "console",
-      "headphone",
-      "monitor",
-    ],
-  },
-  {
-    theme: "furniture",
-    keywords: ["chair", "sofa", "table", "desk", "lamp", "bed", "stool", "couch", "shelf"],
-  },
-];
-
-const BACKGROUND_THEME_PROMPTS: Record<
+import {
+  BackgroundPromptSource,
   BackgroundTheme,
-  { opening: string; setting: string; details: string }
-> = {
-  vehicle: {
-    opening: "Cinematic automotive hero shot of {descriptor}",
-    setting: "positioned on a modern rooftop parking deck with moody skyline bokeh",
-    details: "wet asphalt reflections, dramatic rim lighting, no people, no signage",
-  },
-  beauty: {
-    opening: "Premium beauty campaign still of {descriptor}",
-    setting: "arranged on marble and glass vanity props with diffused daylight",
-    details: "soft pastels, floating mist, no other product categories, hyperreal textures",
-  },
-  fashion: {
-    opening: "Editorial fashion product scene for {descriptor}",
-    setting: "styled on sculpted plinths inside a minimal studio with rim-lit gradients",
-    details: "floating fabric motion, subtle shadow drop, no competing wardrobe",
-  },
-  food: {
-    opening: "Gourmet food photography of {descriptor}",
-    setting: "placed on rustic tabletop with natural window light and depth-rich props",
-    details: "steam, crumbs, utensils, no packaged cosmetics or tech",
-  },
-  tech: {
-    opening: "Futuristic tech showcase for {descriptor}",
-    setting: "on anodized aluminum surface with neon rim lighting and volumetric haze",
-    details: "floating HUD elements, bokeh particles, no organic skincare items",
-  },
-  furniture: {
-    opening: "Interior design lifestyle shot of {descriptor}",
-    setting: "inside a curated living space with layered lighting and tactile materials",
-    details: "area rug shadows, architectural light streaks, no unrelated cosmetics",
-  },
-  generic: {
-    opening: "Lifestyle hero scene for {descriptor}",
-    setting: "set on a premium stylized stage with cinematic depth",
-    details: "soft studio lighting, DSLR depth of field, practical props that support the product",
-  },
-};
-
-const THEME_NEGATIVE_PROMPTS: Partial<Record<BackgroundTheme, string>> = {
-  vehicle: "skincare, cosmetics, perfume, makeup, hands, people, signage, text overlay",
-  beauty: "cars, vehicles, engines, asphalt, tires, industrial machinery",
-  fashion: "cars, vehicles, crowded streets, skincare jars, phones, laptops",
-  food: "cars, people, hands, skincare, laptops, text",
-  tech: "cars, food, skin, people, clutter, wrinkles",
-  furniture: "cars, food, faces, text overlay, clutter, crowd",
-  generic: "logos, text overlay, people, mismatched merchandise, clutter",
-};
+  buildBackgroundPrompt,
+  buildDefaultNegativePrompt,
+  calculateProductPlacement,
+} from "./background.helpers";
+import { generateProductPromptFromImage } from "../../utils/ai/productPromptGenerator";
 
 export class ImageServices implements IImageServices {
   private imageModel = ImageModel;
@@ -238,112 +109,6 @@ export class ImageServices implements IImageServices {
     return Buffer.from(response.data);
   }
 
-  private detectBackgroundTheme(image: Partial<IImage>): BackgroundTheme {
-    const textParts: string[] = [];
-    if (image.title) textParts.push(image.title);
-    if (image.description) textParts.push(image.description);
-    if (image.category) textParts.push(image.category);
-    if (Array.isArray(image.tags)) textParts.push(...image.tags);
-    const normalized = textParts.join(" ").toLowerCase();
-
-    for (const matcher of THEME_KEYWORDS) {
-      if (matcher.keywords.some((keyword) => normalized.includes(keyword))) {
-        return matcher.theme;
-      }
-    }
-
-    if (
-      image.category === "product" ||
-      image.category === "art" ||
-      image.category === "landscape"
-    ) {
-      return "generic";
-    }
-
-    return "generic";
-  }
-
-  private buildBackgroundPrompt(
-    image: Partial<IImage>,
-    userPrompt?: string,
-  ): { prompt: string; theme: BackgroundTheme; source: "user" | "auto" } {
-    const theme = this.detectBackgroundTheme(image);
-    if (userPrompt && userPrompt.trim()) {
-      return { prompt: userPrompt.trim(), theme, source: "user" };
-    }
-
-    const descriptorSources: string[] = [];
-    if (image.title) descriptorSources.push(image.title);
-    if (Array.isArray(image.tags) && image.tags.length) {
-      descriptorSources.push(image.tags.slice(0, 3).join(" "));
-    }
-    if (!descriptorSources.length && image.description) {
-      descriptorSources.push(image.description.split(" ").slice(0, 6).join(" "));
-    }
-
-    const descriptor = descriptorSources.join(" ").trim() || "product";
-    const template = BACKGROUND_THEME_PROMPTS[theme] || BACKGROUND_THEME_PROMPTS.generic;
-    const replaceDescriptor = (value: string) => value.replace("{descriptor}", descriptor);
-    const prompt = [template.opening, template.setting, template.details]
-      .map(replaceDescriptor)
-      .filter(Boolean)
-      .join(". ");
-
-    return { prompt, theme, source: "auto" };
-  }
-
-  private buildDefaultNegativePrompt(theme: BackgroundTheme): string | undefined {
-    return THEME_NEGATIVE_PROMPTS[theme] || THEME_NEGATIVE_PROMPTS.generic;
-  }
-
-  private calculateProductPlacement(options: {
-    backgroundWidth: number;
-    backgroundHeight: number;
-    productWidth: number;
-    productHeight: number;
-    theme: BackgroundTheme;
-  }): { mode: "center" | "custom"; left: number; top: number } {
-    const { backgroundWidth, backgroundHeight, productWidth, productHeight, theme } = options;
-    const marginX = Math.round(backgroundWidth * 0.04);
-    const marginY = Math.round(backgroundHeight * 0.06);
-    const centerLeft = Math.round((backgroundWidth - productWidth) / 2);
-    const centerTop = Math.round((backgroundHeight - productHeight) / 2);
-    let left = centerLeft;
-    let top = centerTop;
-    let mode: "center" | "custom" = "center";
-
-    const productRatio = productWidth / Math.max(productHeight, 1);
-    const shouldGroundProduct =
-      theme === "vehicle" || theme === "fashion" || theme === "furniture" || theme === "food";
-
-    if (shouldGroundProduct) {
-      top = Math.max(marginY, backgroundHeight - productHeight - marginY);
-      mode = "custom";
-    }
-
-    if (productRatio < 0.9) {
-      left = Math.round(backgroundWidth * 0.58 - productWidth / 2);
-      mode = "custom";
-    } else if (productRatio > 1.4 && theme === "vehicle") {
-      left = Math.round(backgroundWidth * 0.5 - productWidth / 2);
-      mode = "custom";
-    }
-
-    const clamp = (value: number, min: number, max: number) => {
-      if (Number.isNaN(value)) return min;
-      if (max <= min) return min;
-      return Math.min(Math.max(value, min), max);
-    };
-
-    left = clamp(left, marginX, backgroundWidth - productWidth - marginX);
-    top = clamp(top, marginY, backgroundHeight - productHeight - marginY);
-
-    if (Math.abs(left - centerLeft) < 8 && Math.abs(top - centerTop) < 8) {
-      mode = "center";
-    }
-
-    return { mode, left, top };
-  }
   // ============================ get Single Image ============================
   getImage = async (req: Request, res: Response, next: NextFunction): Promise<Response> => {
     const userId = res.locals.user?._id?.toString();
@@ -600,19 +365,126 @@ export class ImageServices implements IImageServices {
         ? ((existingImage as any).toObject() as Partial<IImage>)
         : (existingImage as unknown as Partial<IImage>) || {};
 
-    const {
-      prompt: resolvedPrompt,
-      theme: derivedTheme,
-      source: promptSourceType,
-    } = this.buildBackgroundPrompt(promptSourceImage, prompt);
+    const fallbackPromptPlan = buildBackgroundPrompt(promptSourceImage, prompt);
+    let resolvedPrompt = fallbackPromptPlan.prompt;
+    const derivedTheme: BackgroundTheme = fallbackPromptPlan.theme;
+    let promptSourceType: BackgroundPromptSource = fallbackPromptPlan.source;
 
-    const resolvedNegativePrompt =
+    let resolvedNegativePrompt =
       negativePrompt && negativePrompt.trim()
         ? negativePrompt.trim()
-        : this.buildDefaultNegativePrompt(derivedTheme);
+        : buildDefaultNegativePrompt(derivedTheme);
 
     const sourceBuffer = await this.downloadImageAsBuffer(existingImage.url);
     const sourceMetadata = await sharp(sourceBuffer).metadata();
+
+    const metadataSummaryParts: string[] = [];
+    if (existingImage.title) metadataSummaryParts.push(`Title: ${existingImage.title}`);
+    if (existingImage.description)
+      metadataSummaryParts.push(`Description: ${existingImage.description}`);
+    if (existingImage.category) metadataSummaryParts.push(`Category: ${existingImage.category}`);
+    if (Array.isArray(existingImage.tags) && existingImage.tags.length) {
+      metadataSummaryParts.push(`Tags: ${existingImage.tags.slice(0, 8).join(", ")}`);
+    }
+    metadataSummaryParts.push(
+      `Theme guess: ${derivedTheme} | Dimensions: ${sourceMetadata.width || "?"}x${sourceMetadata.height || "?"}`,
+    );
+    const metadataSummary = metadataSummaryParts.join(" | ");
+
+    const productAnalysis = await generateProductPromptFromImage({
+      imageBuffer: sourceBuffer,
+      mimeType: existingImage.mimeType,
+      metadataText: metadataSummary,
+      userPrompt: prompt,
+    });
+
+    let visionSummary: string | undefined;
+    let visionAttributes: string[] | undefined;
+    let visionBackgroundIdeas: string[] | undefined;
+    let visionSizeHint: string | undefined;
+    let visionPositionHint: string | undefined;
+    let negativePromptSource: "user" | "vision" | "auto" | undefined =
+      negativePrompt && negativePrompt.trim()
+        ? "user"
+        : resolvedNegativePrompt
+          ? "auto"
+          : undefined;
+
+    if (productAnalysis) {
+      const combinedPromptParts: string[] = [];
+      if (prompt && prompt.trim()) combinedPromptParts.push(prompt.trim());
+      if (productAnalysis.prompt && productAnalysis.prompt.trim()) {
+        combinedPromptParts.push(productAnalysis.prompt.trim());
+      }
+      if (!combinedPromptParts.length && resolvedPrompt) {
+        combinedPromptParts.push(resolvedPrompt);
+      }
+      const combinedPrompt = combinedPromptParts.join("\n\n").trim();
+      if (combinedPrompt) {
+        resolvedPrompt = combinedPrompt;
+        promptSourceType = prompt && prompt.trim() ? "user+vision" : "vision-auto";
+      }
+
+      if (!negativePrompt || !negativePrompt.trim()) {
+        const visionNegative = productAnalysis.negativePrompt?.trim();
+        if (visionNegative) {
+          resolvedNegativePrompt = visionNegative;
+          negativePromptSource = "vision";
+        } else if (!resolvedNegativePrompt) {
+          resolvedNegativePrompt = buildDefaultNegativePrompt(derivedTheme);
+          negativePromptSource = resolvedNegativePrompt ? "auto" : undefined;
+        }
+      }
+
+      visionSummary = productAnalysis.summary?.trim() || undefined;
+      visionAttributes = Array.isArray(productAnalysis.attributes)
+        ? productAnalysis.attributes.filter((attr) => typeof attr === "string" && attr.trim())
+        : undefined;
+      if (visionAttributes) {
+        visionAttributes = visionAttributes.map((attr) => attr.trim());
+      }
+      visionBackgroundIdeas = Array.isArray(productAnalysis.backgroundIdeas)
+        ? productAnalysis.backgroundIdeas.filter((idea) => typeof idea === "string" && idea.trim())
+        : undefined;
+      if (visionBackgroundIdeas) {
+        visionBackgroundIdeas = visionBackgroundIdeas.map((idea) => idea.trim());
+      }
+
+      visionSizeHint = productAnalysis.sizeHint?.trim() || undefined;
+      visionPositionHint = productAnalysis.positionHint?.trim() || undefined;
+
+      const placementGuidanceParts: string[] = [];
+      if (visionSizeHint) {
+        placementGuidanceParts.push(`Product scale guidance: ${visionSizeHint}`);
+      }
+      if (visionPositionHint) {
+        placementGuidanceParts.push(`Product placement guidance: ${visionPositionHint}`);
+      }
+
+      if (
+        placementGuidanceParts.length &&
+        !/foreground placement guidance:/i.test(resolvedPrompt)
+      ) {
+        resolvedPrompt = `${resolvedPrompt}\n\nForeground placement guidance: ${placementGuidanceParts.join(
+          " | ",
+        )}. Align props, camera perspective, and horizon lines so the product feels naturally integrated.`;
+      }
+
+      if (!negativePromptSource) {
+        negativePromptSource = negativePrompt && negativePrompt.trim() ? "user" : undefined;
+      }
+    }
+
+    if (!negativePromptSource) {
+      negativePromptSource =
+        negativePrompt && negativePrompt.trim()
+          ? "user"
+          : productAnalysis?.negativePrompt
+            ? "vision"
+            : resolvedNegativePrompt
+              ? "auto"
+              : undefined;
+    }
 
     const parseDimension = (value: unknown, fallback: number) => {
       if (typeof value === "undefined" || value === null || value === "") {
@@ -718,7 +590,7 @@ export class ImageServices implements IImageServices {
 
     const resizedProductMetadata = await sharp(resizedProductBuffer).metadata();
 
-    const productPlacement = this.calculateProductPlacement({
+    const productPlacement = calculateProductPlacement({
       backgroundWidth: stabilityWidth,
       backgroundHeight: stabilityHeight,
       productWidth:
@@ -758,6 +630,48 @@ export class ImageServices implements IImageServices {
       storagePathOnCloudinary: `ImaginoApp/genImgWithNewBackground/${user._id}`,
     });
 
+    const tagSet = new Set<string>(["genImgWithNewBackground", "stability-bg", derivedTheme]);
+    if (stylePreset) {
+      tagSet.add(stylePreset);
+    }
+    switch (promptSourceType) {
+      case "user":
+        tagSet.add("custom-prompt");
+        break;
+      case "user+vision":
+        tagSet.add("vision-assisted");
+        break;
+      case "vision-auto":
+        tagSet.add("vision-prompt");
+        break;
+      default:
+        tagSet.add("auto-prompt");
+    }
+    if (visionAttributes?.length) {
+      visionAttributes.slice(0, 4).forEach((attr) => {
+        const slug = attr
+          .toLowerCase()
+          .replace(/[^a-z0-9]+/g, "-")
+          .replace(/^-+|-+$/g, "");
+        if (slug) tagSet.add(slug);
+      });
+    }
+    if (visionSizeHint || visionPositionHint) {
+      tagSet.add("placement-aware");
+    }
+
+    const placementNotes: string[] = [];
+    if (visionPositionHint) placementNotes.push(`Position: ${visionPositionHint}`);
+    if (visionSizeHint) placementNotes.push(`Scale: ${visionSizeHint}`);
+
+    let generatedDescription =
+      visionSummary ||
+      (prompt && prompt.trim()) ||
+      `AI generated ${derivedTheme} background composed with Stability AI.`;
+    if (placementNotes.length) {
+      generatedDescription = `${generatedDescription} Placement cues: ${placementNotes.join(" | ")}.`;
+    }
+
     const generatedImage = await this.imageModel.create({
       user: user._id,
       url: secure_url,
@@ -782,29 +696,29 @@ export class ImageServices implements IImageServices {
             ...(typeof parsedSeed !== "undefined" ? { seed: parsedSeed } : {}),
             ...(resolvedNegativePrompt ? { negativePrompt: resolvedNegativePrompt } : {}),
             promptSource: promptSourceType,
+            ...(negativePromptSource ? { negativePromptSource } : {}),
             theme: derivedTheme,
             placementMode: productPlacement.mode,
             ...(productPlacement.mode === "custom"
               ? { placementOffsets: { left: productPlacement.left, top: productPlacement.top } }
               : {}),
+            metadataSummary,
+            ...(visionSummary ? { visionSummary } : {}),
+            ...(visionAttributes?.length ? { visionAttributes } : {}),
+            ...(visionBackgroundIdeas?.length ? { visionBackgroundIdeas } : {}),
+            ...(visionSizeHint ? { visionSizeHint } : {}),
+            ...(visionPositionHint ? { visionPositionHint } : {}),
           },
           timestamp: new Date(),
           processingTime: Date.now() - stabilityStartTime,
         },
       ],
       status: "completed" as const,
-      tags: [
-        "genImgWithNewBackground",
-        derivedTheme,
-        ...(stylePreset ? [stylePreset] : []),
-        ...(promptSourceType === "user" ? ["custom-prompt"] : ["auto-prompt"]),
-      ],
+      tags: Array.from(tagSet),
       title:
         existingImage.title ||
         `${existingImage.filename} - ${derivedTheme.replace(/-/g, " ")} background`,
-      description:
-        prompt?.trim() ||
-        `AI generated ${derivedTheme} background composed with Stability AI using prompt: ${resolvedPrompt}`,
+      description: generatedDescription,
       category: existingImage.category || "product",
       isPublic: false,
       views: 0,
