@@ -486,6 +486,66 @@ export class ImageServices implements IImageServices {
     return successHandler({ res, result: { image } });
   };
 
+  // ============================ listBackgroundsForImage ============================
+  listBackgroundsForImage = async (
+    req: Request,
+    res: Response,
+    next: NextFunction,
+  ): Promise<Response> => {
+    const userId = res.locals.user?._id?.toString();
+    if (!userId) {
+      throw new ApplicationException("User not authenticated", 401);
+    }
+
+    const imageId = (req.params as Record<string, string | undefined>).imageId;
+    if (!imageId || !mongoose.Types.ObjectId.isValid(imageId)) {
+      throw new ApplicationException("Valid imageId is required", 400);
+    }
+
+    const parentImage = await this.imageModel.findOne({
+      _id: new mongoose.Types.ObjectId(imageId),
+      user: new mongoose.Types.ObjectId(userId),
+      deletedAt: null,
+    });
+
+    if (!parentImage) {
+      throw new ApplicationException("Image not found", 404);
+    }
+
+    const rawPage = Number(req.query.page ?? 1);
+    const rawSize = Number(req.query.size ?? 20);
+    const page = Number.isFinite(rawPage) && rawPage > 0 ? rawPage : 1;
+    const size = Number.isFinite(rawSize) && rawSize > 0 ? Math.min(rawSize, 100) : 20;
+
+    const { limit, skip } = paginationFunction({ page, size });
+
+    const baseQuery = {
+      parentId: parentImage._id,
+      user: new mongoose.Types.ObjectId(userId),
+      deletedAt: null as null,
+      isBackgroundOnly: true,
+    };
+
+    const [backgroundDocs, totalCount] = await Promise.all([
+      this.imageModel.find(baseQuery).sort({ createdAt: -1 }).skip(skip).limit(limit),
+      this.imageModel.countDocuments(baseQuery),
+    ]);
+
+    const backgrounds = backgroundDocs.map((doc) => this.serializeImageDoc(doc));
+
+    return successHandler({
+      res,
+      message: "Backgrounds fetched successfully",
+      result: {
+        parentImage: this.serializeImageDoc(parentImage),
+        backgrounds,
+        totalCount,
+        page,
+        size,
+      },
+    });
+  };
+
   // ============================ generateSuitableBackground ============================
   generateSuitableBackground = async (
     req: Request,
@@ -697,7 +757,208 @@ export class ImageServices implements IImageServices {
     res: Response,
     next: NextFunction,
   ): Promise<Response> => {
-    return successHandler({ res });
+    const user = res.locals.user;
+    if (!user?._id) {
+      throw new ApplicationException("User not authenticated", 401);
+    }
+
+    const bodyPayload = req.body || {};
+    const productImageId = bodyPayload.productImageId as string | undefined;
+    const backgroundImageId = bodyPayload.backgroundImageId as string | undefined;
+    const backgroundFile = req.file as Express.Multer.File | undefined;
+
+    if (!productImageId || !mongoose.Types.ObjectId.isValid(productImageId)) {
+      throw new ApplicationException("Valid productImageId is required", 400);
+    }
+
+    if (!backgroundImageId && !backgroundFile) {
+      throw new ApplicationException(
+        "Provide backgroundImageId or upload a backgroundImage file",
+        400,
+      );
+    }
+
+    if (backgroundImageId && !mongoose.Types.ObjectId.isValid(backgroundImageId)) {
+      throw new ApplicationException("Invalid backgroundImageId", 400);
+    }
+
+    const userObjectId = new mongoose.Types.ObjectId(user._id);
+
+    const transparentImage = await this.imageModel.findOne({
+      _id: new mongoose.Types.ObjectId(productImageId),
+      user: userObjectId,
+      deletedAt: null,
+    });
+
+    if (!transparentImage) {
+      throw new ApplicationException("Transparent product image not found", 404);
+    }
+
+    const composeStartTime = Date.now();
+    const productBuffer = await this.downloadImageAsBuffer(transparentImage.url);
+    const productMetadata = await sharp(productBuffer).metadata();
+
+    let backgroundBuffer: Buffer;
+    let backgroundImageDoc: IImage | null = null;
+
+    if (backgroundImageId) {
+      backgroundImageDoc = await this.imageModel.findOne({
+        _id: new mongoose.Types.ObjectId(backgroundImageId),
+        user: userObjectId,
+        deletedAt: null,
+      });
+
+      if (!backgroundImageDoc) {
+        throw new ApplicationException("Background image not found", 404);
+      }
+
+      backgroundBuffer = await this.downloadImageAsBuffer(backgroundImageDoc.url);
+    } else if (backgroundFile?.path) {
+      backgroundBuffer = fs.readFileSync(backgroundFile.path);
+    } else {
+      throw new ApplicationException("Unable to resolve background image", 400);
+    }
+
+    const backgroundMetadata = await sharp(backgroundBuffer).metadata();
+    const backgroundWidth = backgroundMetadata.width || productMetadata.width || 1024;
+    const backgroundHeight = backgroundMetadata.height || productMetadata.height || 1024;
+
+    const promptSeed =
+      typeof (transparentImage as any).toObject === "function"
+        ? ((transparentImage as any).toObject() as Partial<IImage>)
+        : (transparentImage as unknown as Partial<IImage>);
+    const { theme: derivedTheme } = buildBackgroundPrompt(promptSeed);
+
+    const resizedProductBuffer = await sharp(productBuffer)
+      .resize({
+        width: Math.min(backgroundWidth, productMetadata.width || backgroundWidth),
+        height: Math.min(backgroundHeight, productMetadata.height || backgroundHeight),
+        fit: "inside",
+        withoutEnlargement: true,
+      })
+      .png()
+      .toBuffer();
+
+    const resizedProductMetadata = await sharp(resizedProductBuffer).metadata();
+
+    const placement = calculateProductPlacement({
+      backgroundWidth,
+      backgroundHeight,
+      productWidth:
+        resizedProductMetadata.width ||
+        Math.min(backgroundWidth, productMetadata.width || backgroundWidth),
+      productHeight:
+        resizedProductMetadata.height ||
+        Math.min(backgroundHeight, productMetadata.height || backgroundHeight),
+      theme: derivedTheme,
+    });
+
+    const overlayOptions: sharp.OverlayOptions =
+      placement.mode === "custom"
+        ? { input: resizedProductBuffer, left: placement.left, top: placement.top }
+        : { input: resizedProductBuffer, gravity: "center" };
+
+    const compositedBuffer = await sharp(backgroundBuffer)
+      .resize({ width: backgroundWidth, height: backgroundHeight, fit: "cover" })
+      .composite([overlayOptions])
+      .png()
+      .toBuffer();
+
+    if (backgroundFile?.path && fs.existsSync(backgroundFile.path)) {
+      fs.unlinkSync(backgroundFile.path);
+    }
+
+    const projectFolder = process.env.PROJECT_FOLDER || "DefaultProjectFolder";
+    const { public_id, secure_url } = await uploadBufferFile({
+      fileBuffer: compositedBuffer,
+      storagePathOnCloudinary: `${projectFolder}/${user._id}/selected-backgrounds`,
+    });
+
+    const tagSet = new Set<string>([
+      "genImgWithSelectedBackground",
+      derivedTheme,
+      "manual-background",
+    ]);
+
+    if (backgroundImageDoc?.tags?.length) {
+      backgroundImageDoc.tags.slice(0, 3).forEach((tag) => tagSet.add(tag));
+    }
+
+    const placementNotes: string[] = [];
+    if (placement.mode === "custom") {
+      placementNotes.push(`Position left=${placement.left}, top=${placement.top}`);
+    } else {
+      placementNotes.push("Centered placement");
+    }
+
+    const generatedImage = await this.imageModel.create({
+      user: user._id,
+      url: secure_url,
+      storageKey: public_id,
+      filename: `${transparentImage.filename || "image"}-selected-bg-${Date.now()}.png`,
+      originalFilename: `${
+        transparentImage.originalFilename || transparentImage.filename
+      }-selected-bg.png`,
+      mimeType: "image/png",
+      size: compositedBuffer.length,
+      parentId: transparentImage._id,
+      children: [],
+      isOriginal: false,
+      version: (transparentImage.version || 1) + 1,
+      aiEdits: [
+        {
+          operation: "custom" as const,
+          provider: "custom" as const,
+          prompt: "Composite product onto selected background",
+          parameters: {
+            backgroundSource: backgroundImageDoc ? "existing-image" : "uploaded-file",
+            ...(backgroundImageDoc ? { backgroundImageId: backgroundImageDoc._id } : {}),
+            placementMode: placement.mode,
+            ...(placement.mode === "custom"
+              ? { placementOffsets: { left: placement.left, top: placement.top } }
+              : {}),
+            theme: derivedTheme,
+          },
+          timestamp: new Date(),
+          processingTime: Date.now() - composeStartTime,
+        },
+      ],
+      status: "completed" as const,
+      tags: Array.from(tagSet),
+      title: transparentImage.title
+        ? `${transparentImage.title} - selected background`
+        : `${transparentImage.filename}-selected-background`,
+      description: backgroundImageDoc?.description
+        ? `Composite using background: ${backgroundImageDoc.description}`
+        : "Composite created with user-selected background image",
+      category: transparentImage.category || "product",
+      isPublic: false,
+      views: 0,
+      downloads: 0,
+      dimensions: {
+        width: backgroundWidth,
+        height: backgroundHeight,
+      },
+    });
+
+    await this.imageModel.findByIdAndUpdate(transparentImage._id, {
+      $addToSet: { children: generatedImage._id },
+    });
+
+    const resultPayload: Record<string, unknown> = {
+      transparentImage: this.serializeImageDoc(transparentImage),
+      generatedImage: this.serializeImageDoc(generatedImage),
+    };
+
+    if (backgroundImageDoc) {
+      resultPayload.backgroundImage = this.serializeImageDoc(backgroundImageDoc);
+    }
+
+    return successHandler({
+      res,
+      message: "Background applied successfully",
+      result: resultPayload,
+    });
   };
 
   // ============================ genImgWithNewBackground ============================

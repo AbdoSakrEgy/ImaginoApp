@@ -7,7 +7,13 @@ const imageServices = new ImageServices();
 
 router.get("/get-image", auth, imageServices.getImage);
 router.post("/gen-suitable-background", auth, imageServices.generateSuitableBackground);
-router.post("/gen-img-with-selected-background", auth, imageServices.genImgWithSelectedBackground);
+router.get("/backgrounds/:imageId", auth, imageServices.listBackgroundsForImage);
+router.post(
+  "/gen-img-with-selected-background",
+  auth,
+  multerUpload({}).single("backgroundImage"),
+  imageServices.genImgWithSelectedBackground,
+);
 router.post("/gen-img-with-new-background", auth, imageServices.genImgWithNewBackground);
 router.post("/gen-resize-img", auth, multerUpload({}).single("image"), imageServices.genResizeImg);
 router.post(
