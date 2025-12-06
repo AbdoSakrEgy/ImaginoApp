@@ -22,6 +22,7 @@ const initCloudinary = () => {
 // SINGLE FILE UPLOAD
 // ------------------------------------------------------------------
 export const uploadSingleFile = async ({
+  
   fileLocation,
   storagePathOnCloudinary = "ImaginoApp",
 }: {

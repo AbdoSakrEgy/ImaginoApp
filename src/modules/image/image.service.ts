@@ -30,6 +30,7 @@ import {
   calculateProductPlacement,
 } from "./background.helpers";
 import { generateProductPromptFromImage } from "../../utils/ai/productPromptGenerator";
+import { uploadBufferFile } from "../../utils/cloudinary/cloudinaryBuffer.service";
 
 export class ImageServices implements IImageServices {
   private imageModel = ImageModel;
@@ -1613,69 +1614,65 @@ export class ImageServices implements IImageServices {
   };
 
   // ============================ uploadImageWithoutBackground ============================
-  uploadImageWithoutBackground = async (
-    req: Request,
-    res: Response,
-    next: NextFunction,
-  ): Promise<Response> => {
-    const userId = res.locals.user?._id?.toString();
-    if (!userId) throw new ApplicationException("User not authenticated", 401);
-    if (!req.file) throw new ApplicationException("No image uploaded", 400);
+ uploadImageWithoutBackground = async (
+  req: Request,
+  res: Response,
+  next: NextFunction,
+): Promise<Response> => {
+ const userId = res.locals.user?._id?.toString();
+  if (!userId) throw new ApplicationException("User not authenticated", 401);
 
-    const tmpFolder = path.join(__dirname, "../../tmp");
-    if (!fs.existsSync(tmpFolder)) fs.mkdirSync(tmpFolder, { recursive: true });
+  if (!req.file) throw new ApplicationException("No image uploaded", 400);
 
-    const fileBuffer = fs.readFileSync(req.file.path);
-    const base64Image = fileBuffer.toString("base64");
+  const fileBuffer = fs.readFileSync(req.file.path);
+  const base64Image = fileBuffer.toString("base64");
 
-    const resultBase64 = await removeBackgroundFromImageBase64({
-      imageBase64: base64Image,
-    });
+  const resultBase64 = await removeBackgroundFromImageBase64({
+    imageBase64: base64Image,
+  });
 
-    const tmpFilePath = path.join(tmpFolder, `no-bg-${Date.now()}.png`);
-    fs.writeFileSync(tmpFilePath, Buffer.from(resultBase64, "base64"));
+  const bufferToUpload = Buffer.from(resultBase64, "base64");
 
-    const projectFolder = process.env.PROJECT_FOLDER || "DefaultProjectFolder";
+  const projectFolder = process.env.PROJECT_FOLDER || "DefaultProjectFolder";
 
-    const { public_id, secure_url } = await uploadSingleFile({
-      fileLocation: tmpFilePath,
-      storagePathOnCloudinary: `${projectFolder}/${userId}/no-bg`,
-    });
-    console.log(public_id);
+  const { public_id, secure_url } = await uploadBufferFile({
+    fileBuffer: bufferToUpload,
+    storagePathOnCloudinary: `${projectFolder}/${userId}/no-bg`
+  });
 
-    const newImage = await ImageModel.create({
-      user: new mongoose.Types.ObjectId(userId),
-      url: secure_url,
-      storageKey: public_id,
-      filename: req.file.originalname,
-      mimeType: req.file.mimetype,
-      size: req.file.size,
-      dimensions: { width: 0, height: 0 },
-      status: "completed",
-      isPublic: false,
-      aiEdits: [
-        {
-          operation: "remove-background",
-          provider: "custom",
-          timestamp: new Date(),
-          processingTime: 0,
-          cost: 0,
-        },
-      ],
-    });
-
-    fs.unlinkSync(req.file.path);
-    fs.unlinkSync(tmpFilePath);
-
-    return successHandler({
-      res,
-      message: "Image uploaded and background removed successfully",
-      result: {
-        _id: newImage._id,
-        url: newImage.url,
-        storageKey: newImage.storageKey,
-        aiEdits: newImage.aiEdits,
+  const newImage = await ImageModel.create({
+    user: new mongoose.Types.ObjectId(userId),
+    url: secure_url,
+    storageKey: public_id,
+    filename: req.file.originalname,
+    mimeType: req.file.mimetype,
+    size: req.file.size,
+    dimensions: { width: 0, height: 0 },
+    status: "completed",
+    isPublic: false,
+    aiEdits: [
+      {
+        operation: "remove-background",
+        provider: "custom",
+        timestamp: new Date(),
+        processingTime: 0,
+        cost: 0,
       },
-    });
-  };
+    ],
+  });
+
+  fs.unlinkSync(req.file.path);
+
+  return successHandler({
+    res,
+    message: "Image uploaded and background removed successfully",
+    result: {
+      _id: newImage._id,
+      url: newImage.url,
+      storageKey: newImage.storageKey,
+      aiEdits: newImage.aiEdits,
+    },
+  });
+}
+
 }
