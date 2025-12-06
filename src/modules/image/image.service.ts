@@ -1743,16 +1743,20 @@ export class ImageServices implements IImageServices {
   ): Promise<Response> => {
     const user = res.locals.user;
     const file = req.file;
-    // step: file existence
+    const { angle } = req.body;
+    // step: file and angle existence
     if (!file) {
       throw new ApplicationException("file is required", 400);
+    }
+    if (!angle) {
+      return successHandler({ res, message: "Please send angle", status: 400 });
     }
     // step: store image in cloudinary and db
     const { public_id, secure_url } = await uploadSingleFile({
       fileLocation: (file as any).path,
       storagePathOnCloudinary: `ImaginoApp/genImgWithNewDimension/${user._id}`,
     });
-    const image = await this.imageModel.create({
+    const originalImage = await this.imageModel.create({
       user: user._id,
       url: secure_url,
       storageKey: public_id,
@@ -1774,80 +1778,75 @@ export class ImageServices implements IImageServices {
       downloads: 0,
     });
     // step: use ai to gen new images with new dimension
-    const newImages = await genImgWithNewDimensionFn(file.path);
-    // step: store new images in cloudinary and db
-    const storedImages: any = [];
+    const newAngleImageBuffer = await genImgWithNewDimensionFn(file, angle);
 
-    for (const newImage of newImages) {
-      try {
-        // Convert base64 to buffer if needed
-        const imageBuffer = Buffer.from(newImage.image, "base64");
-        const tempImagePath = `${file.path}-${newImage.viewType}`;
-        fs.writeFileSync(tempImagePath, imageBuffer);
-
-        // sotre in cloudinary
-        const { public_id: newPublicId, secure_url: newSecureUrl } = await uploadSingleFile({
-          fileLocation: tempImagePath,
-          storagePathOnCloudinary: `ImaginoApp/genImgWithNewDimension/${user._id}/${newImage.viewType}`,
-        });
-
-        // store in db
-        const childImage = await this.imageModel.create({
-          user: user._id,
-          url: newSecureUrl,
-          storageKey: newPublicId,
-          filename: `${file.filename}-${newImage.viewType}`,
-          originalFilename: `${file.originalname}-${newImage.viewType}`,
-          mimeType: file.mimetype,
-          size: imageBuffer.length,
-          parentId: image._id,
-          children: [],
-          isOriginal: false,
-          version: 1,
-          aiEdits: [
-            {
-              operation: "image-to-image" as const,
-              provider: "custom" as const,
-              prompt: `Generate ${newImage.viewType} view of product`,
-              parameters: {
-                viewType: newImage.viewType,
-                description: newImage.description,
-                confidence: newImage.confidence || 0.92,
-              },
-              timestamp: new Date(),
-              processingTime: 0,
-            },
-          ],
-          status: "completed" as const,
-          tags: ["genImgWithNewDimension", newImage.viewType],
-          title: `${file.filename} - ${newImage.viewType}`,
-          description: newImage.description,
-          category: "product" as const,
-          isPublic: false,
-          views: 0,
-          downloads: 0,
-        });
-
-        storedImages.push(childImage);
-
-        // Clean up temp file
-        fs.unlinkSync(tempImagePath);
-      } catch (error) {
-        console.error(`Error storing ${newImage.viewType} image:`, error);
-      }
+    // step: Create a temporary path for the new angle image to upload it
+    const newAngleFilename = `newAngle-${Date.now()}-${file.filename}`;
+    const tempNewAnglePath = `${file.path}-new angle`;
+    if (!newAngleImageBuffer) {
+      return successHandler({ res, message: "Failed to generate new angle image", status: 500 });
     }
 
-    // Update parent image with children references
-    await this.imageModel.findByIdAndUpdate(image._id, {
-      children: storedImages.map((img: any) => img._id),
+    fs.writeFileSync(tempNewAnglePath, newAngleImageBuffer);
+
+    // step: Store new angle image in Cloudinary
+    const { public_id: newPublicId, secure_url: newSecureUrl } = await uploadSingleFile({
+      fileLocation: tempNewAnglePath,
+      storagePathOnCloudinary: `ImaginoApp/genInhancedQuality/${user._id}/new angle`,
     });
+
+    // step: Store new angle image in DB (as child of original)
+    const newAngleImage = await this.imageModel.create({
+      user: user._id,
+      url: newSecureUrl,
+      storageKey: newPublicId,
+      filename: newAngleFilename,
+      originalFilename: `enhanced-${file.originalname}`,
+      mimeType: file.mimetype,
+      size: newAngleImageBuffer.length,
+      parentId: originalImage._id,
+      children: [],
+      isOriginal: false,
+      version: 1, // Will auto-increment due to pre-save hook logic if configured
+      aiEdits: [
+        {
+          operation: "enhance" as const, // Ensure this enum exists in your schema
+          provider: "custom" as const, // or "google"
+          prompt: "Enhance image quality and resolution",
+          parameters: {
+            model: "gemini-flash",
+            improvement: "quality-upscale",
+          },
+          timestamp: new Date(),
+          processingTime: 0,
+        },
+      ],
+      status: "completed" as const,
+      tags: ["enhanced", "genAI", "high-quality"],
+      title: `Enhanced - ${file.originalname}`,
+      description: "AI Enhanced version of the original image",
+      category: "other" as const,
+      isPublic: false,
+      views: 0,
+      downloads: 0,
+    });
+
+    // step: Update parent image with child reference
+    await this.imageModel.findByIdAndUpdate(originalImage._id, {
+      $addToSet: { children: newAngleImage._id },
+    });
+
+    // step: Cleanup file system (Temp files)
+    // Delete the original multer upload
+    if (fs.existsSync(file.path)) fs.unlinkSync(file.path);
+    // step: Delete the generated temp file
+    if (fs.existsSync(tempNewAnglePath)) fs.unlinkSync(tempNewAnglePath);
 
     return successHandler({
       res,
       result: {
-        originalImage: image,
-        generatedImages: storedImages,
-        totalGenerated: storedImages.length,
+        original: originalImage,
+        enhanced: newAngleImage,
       },
     });
   };
