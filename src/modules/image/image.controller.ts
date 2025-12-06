@@ -14,6 +14,12 @@ router.post(
   multerUpload({}).single("backgroundImage"),
   imageServices.genImgWithSelectedBackground,
 );
+router.post(
+  "/blur-image-region",
+  auth,
+  multerUpload({}).single("image"),
+  imageServices.blurImageRegion,
+);
 router.post("/gen-img-with-new-background", auth, imageServices.genImgWithNewBackground);
 router.post("/gen-resize-img", auth, multerUpload({}).single("image"), imageServices.genResizeImg);
 router.post(

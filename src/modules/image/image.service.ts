@@ -751,6 +751,257 @@ export class ImageServices implements IImageServices {
     });
   };
 
+  // ============================ blurImageRegion ============================
+  blurImageRegion = async (req: Request, res: Response, next: NextFunction): Promise<Response> => {
+    const user = res.locals.user;
+    if (!user?._id) {
+      throw new ApplicationException("User not authenticated", 401);
+    }
+
+    const file = req.file as Express.Multer.File | undefined;
+    const body = req.body || {};
+
+    const imageId = body.imageId as string | undefined;
+    const requireImageId = !file;
+
+    if (requireImageId && (!imageId || !mongoose.Types.ObjectId.isValid(imageId))) {
+      throw new ApplicationException("Provide a valid imageId or upload an image", 400);
+    }
+
+    const parseNumber = (value: unknown, field: string) => {
+      if (typeof value === "undefined" || value === null || value === "") {
+        throw new ApplicationException(`${field} is required`, 400);
+      }
+      const parsed = Number(value);
+      if (!Number.isFinite(parsed)) {
+        throw new ApplicationException(`${field} must be a finite number`, 400);
+      }
+      return parsed;
+    };
+
+    const regionLeft = Math.round(parseNumber(body.x, "x"));
+    const regionTop = Math.round(parseNumber(body.y, "y"));
+    const regionWidth = Math.round(parseNumber(body.width, "width"));
+    const regionHeight = Math.round(parseNumber(body.height, "height"));
+    const blurRadiusInput = body.blurRadius;
+    const blurRadius = (() => {
+      if (
+        typeof blurRadiusInput === "undefined" ||
+        blurRadiusInput === null ||
+        blurRadiusInput === ""
+      ) {
+        return 25;
+      }
+      const parsed = Number(blurRadiusInput);
+      if (!Number.isFinite(parsed) || parsed <= 0) {
+        throw new ApplicationException("blurRadius must be a positive number", 400);
+      }
+      return Math.min(Math.max(parsed, 1), 200);
+    })();
+
+    let parentImage: IImage | null = null;
+    let sourceBuffer: Buffer;
+    let sourceMimeType: string | undefined;
+    let sourceFilename: string | undefined;
+    let sourceOriginalFilename: string | undefined;
+
+    if (file) {
+      sourceBuffer = fs.readFileSync(file.path);
+      const originalMetadata = await sharp(sourceBuffer).metadata();
+
+      const { public_id, secure_url } = await uploadSingleFile({
+        fileLocation: file.path,
+        storagePathOnCloudinary: `ImaginoApp/blurImageRegion/${user._id}/originals`,
+      });
+
+      parentImage = await this.imageModel.create({
+        user: user._id,
+        url: secure_url,
+        storageKey: public_id,
+        filename: file.filename,
+        originalFilename: file.originalname,
+        mimeType: file.mimetype,
+        size: file.size,
+        dimensions: {
+          width: originalMetadata.width || 0,
+          height: originalMetadata.height || 0,
+        },
+        children: [],
+        isOriginal: true,
+        version: 1,
+        aiEdits: [],
+        status: "completed" as const,
+        tags: ["blur-region", "original"],
+        title: file.originalname,
+        description: "Original upload for blur operation",
+        category: "other" as const,
+        isPublic: false,
+        views: 0,
+        downloads: 0,
+      });
+
+      sourceMimeType = file.mimetype;
+      sourceFilename = file.filename;
+      sourceOriginalFilename = file.originalname;
+    } else {
+      parentImage = await this.imageModel.findOne({
+        _id: new mongoose.Types.ObjectId(imageId as string),
+        user: new mongoose.Types.ObjectId(user._id),
+        deletedAt: null,
+      });
+
+      if (!parentImage) {
+        throw new ApplicationException("Image not found", 404);
+      }
+
+      sourceBuffer = await this.downloadImageAsBuffer(parentImage.url);
+      sourceMimeType = parentImage.mimeType;
+      sourceFilename = parentImage.filename;
+      sourceOriginalFilename = parentImage.originalFilename || parentImage.filename;
+    }
+
+    const metadata = await sharp(sourceBuffer).metadata();
+    const imageWidth = metadata.width || 0;
+    const imageHeight = metadata.height || 0;
+
+    if (!imageWidth || !imageHeight) {
+      throw new ApplicationException("Unable to determine image dimensions", 500);
+    }
+
+    if (regionWidth <= 0 || regionHeight <= 0) {
+      throw new ApplicationException("width and height must be positive", 400);
+    }
+
+    if (regionLeft < 0 || regionTop < 0) {
+      throw new ApplicationException("x and y must be non-negative", 400);
+    }
+
+    if (regionLeft + regionWidth > imageWidth || regionTop + regionHeight > imageHeight) {
+      throw new ApplicationException("Requested blur region exceeds image bounds", 400);
+    }
+
+    const blurOperationStart = Date.now();
+
+    const blurredSourceBuffer = await sharp(sourceBuffer).blur(blurRadius).toBuffer();
+    const blurredRegionBuffer = await sharp(blurredSourceBuffer)
+      .extract({ left: regionLeft, top: regionTop, width: regionWidth, height: regionHeight })
+      .toBuffer();
+
+    const composite = sharp(sourceBuffer).composite([
+      { input: blurredRegionBuffer, left: regionLeft, top: regionTop },
+    ]);
+
+    type SupportedCompositeFormat = "jpeg" | "png" | "webp" | "avif";
+
+    const targetFormat: SupportedCompositeFormat = (() => {
+      const normalized = (metadata.format || "png").toLowerCase();
+      if (["jpeg", "jpg"].includes(normalized)) return "jpeg" as const;
+      if (normalized === "webp") return "webp" as const;
+      if (normalized === "avif") return "avif" as const;
+      return "png" as const;
+    })();
+
+    let formattedPipeline: sharp.Sharp;
+    switch (targetFormat) {
+      case "jpeg":
+        formattedPipeline = composite.jpeg({ quality: 95 });
+        break;
+      case "webp":
+        formattedPipeline = composite.webp({ quality: 95 });
+        break;
+      case "avif":
+        formattedPipeline = composite.avif({ quality: 80 });
+        break;
+      default:
+        formattedPipeline = composite.png();
+    }
+
+    const blurredCompositeBuffer = await formattedPipeline.toBuffer();
+
+    const formatDetails: Record<SupportedCompositeFormat, { mime: string; extension: string }> = {
+      jpeg: { mime: "image/jpeg", extension: "jpg" },
+      png: { mime: "image/png", extension: "png" },
+      webp: { mime: "image/webp", extension: "webp" },
+      avif: { mime: "image/avif", extension: "avif" },
+    };
+
+    const outputDetails = formatDetails[targetFormat];
+    const parsedName = path.parse(sourceOriginalFilename || sourceFilename || "image");
+    const blurredFilename = `${parsedName.name || "image"}-blur-${Date.now()}.${outputDetails.extension}`;
+
+    const projectFolder = process.env.PROJECT_FOLDER || "DefaultProjectFolder";
+    const { public_id: blurredPublicId, secure_url: blurredSecureUrl } = await uploadBufferFile({
+      fileBuffer: blurredCompositeBuffer,
+      storagePathOnCloudinary: `${projectFolder}/${user._id}/blurred-regions`,
+    });
+
+    const blurredImage = await this.imageModel.create({
+      user: user._id,
+      url: blurredSecureUrl,
+      storageKey: blurredPublicId,
+      filename: blurredFilename,
+      originalFilename: `${parsedName.name || "image"}-blurred.${outputDetails.extension}`,
+      mimeType: outputDetails.mime,
+      size: blurredCompositeBuffer.length,
+      parentId: parentImage?._id || null,
+      children: [],
+      isOriginal: false,
+      version: parentImage ? (parentImage.version || 1) + 1 : 1,
+      aiEdits: [
+        {
+          operation: "custom" as const,
+          provider: "custom" as const,
+          prompt: "Apply localized blur",
+          parameters: {
+            blurRegion: {
+              x: regionLeft,
+              y: regionTop,
+              width: regionWidth,
+              height: regionHeight,
+            },
+            blurRadius,
+            sourceImageId: parentImage?._id,
+          },
+          timestamp: new Date(),
+          processingTime: Date.now() - blurOperationStart,
+        },
+      ],
+      status: "completed" as const,
+      tags: ["blur-region", "localized-blur"],
+      title: parentImage?.title
+        ? `${parentImage.title} - blurred`
+        : `${parsedName.name || "image"} - blurred region`,
+      description: `Blurred region ${regionWidth}x${regionHeight} at (${regionLeft}, ${regionTop})`,
+      category: parentImage?.category || "other",
+      isPublic: false,
+      views: 0,
+      downloads: 0,
+      dimensions: {
+        width: imageWidth,
+        height: imageHeight,
+      },
+    });
+
+    if (parentImage?._id) {
+      await this.imageModel.findByIdAndUpdate(parentImage._id, {
+        $addToSet: { children: blurredImage._id },
+      });
+    }
+
+    if (file && fs.existsSync(file.path)) {
+      fs.unlinkSync(file.path);
+    }
+
+    return successHandler({
+      res,
+      message: "Image blurred successfully",
+      result: {
+        originalImage: parentImage ? this.serializeImageDoc(parentImage) : null,
+        blurredImage: this.serializeImageDoc(blurredImage),
+      },
+    });
+  };
+
   // ============================ genImgWithSelectedBackground ============================
   genImgWithSelectedBackground = async (
     req: Request,

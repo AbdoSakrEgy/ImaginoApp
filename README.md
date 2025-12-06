@@ -258,6 +258,53 @@ The following endpoints live under the `/image` router and require a valid beare
 - `404` when the transparent image does not belong to the caller.
 - `401` when auth is missing.
 
+## POST `/image/blur-image-region`
+
+- **Purpose**: Blur a rectangular region inside an image (useful for anonymizing faces, license plates, or any sensitive zone). You can either reference an existing stored image via `imageId` or upload a brand new file in the same request.
+- **Payload style**: `multipart/form-data` when including a file (`image` field). When omitting the file, send a JSON body with the numeric coordinates.
+
+### Body / form fields
+
+| Field        | Type   | Required    | Notes                                                                            |
+| ------------ | ------ | ----------- | -------------------------------------------------------------------------------- |
+| `imageId`    | text   | conditional | Required when no file is uploaded. Must reference an image owned by the caller.  |
+| `image`      | file   | conditional | Required when `imageId` is omitted. Any image format accepted by `sharp`.        |
+| `x`          | number | yes         | Left coordinate (pixels) of the region to blur. Must be within the image bounds. |
+| `y`          | number | yes         | Top coordinate (pixels) of the region to blur.                                   |
+| `width`      | number | yes         | Width of the blur box in pixels.                                                 |
+| `height`     | number | yes         | Height of the blur box in pixels.                                                |
+| `blurRadius` | number | optional    | Blur strength (defaults to `25`, clamped between `1` and `200`).                 |
+
+### Behavior overview
+
+1. Validates ownership (or uploads the provided file as a brand new original image owned by the caller).
+2. Uses `sharp` to generate a blurred copy of the source image, extracts just the requested rectangle, and composites that blurred patch back on top of the original pixels.
+3. Stores the blurred result in Cloudinary under `${PROJECT_FOLDER || "DefaultProjectFolder"}/${userId}/blurred-regions`, links it as a child of the original image, and records the blur region metadata in `aiEdits`.
+
+### Response shape
+
+```jsonc
+{
+  "message": "Image blurred successfully",
+  "status": 200,
+  "result": {
+    "originalImage": {
+      /* source image doc (null only in extreme edge cases) */
+    },
+    "blurredImage": {
+      /* new blurred child document */
+    },
+  },
+}
+```
+
+### Typical errors
+
+- `400` when coordinates are missing/invalid or fall outside the image bounds.
+- `400` when neither `imageId` nor `image` are supplied.
+- `404` if the referenced `imageId` does not belong to the caller.
+- `401` when auth is missing.
+
 ## POST `/image/gen-img-with-new-background`
 
 - **Purpose**: Compose a lifestyle-ready asset by taking a previously uploaded transparent product image (typically produced via `/gen-img-without-background`) and asking Stability AI to hallucinate a new background, then blending the two layers together.
