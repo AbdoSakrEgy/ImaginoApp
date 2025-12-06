@@ -61,4 +61,14 @@ router.post(
   imageServices.generateSuitableBackgroundsFromImage,
 );
 
+router.post(
+  "/convert-image-to-anime-style",
+  auth,  
+  multerUpload({
+    sendedFileDest: "ai-style", 
+    sendedFileType: ["image/jpeg", "image/png", "image/webp"],
+  }).single("image"),
+  imageServices.convertYourImageToStyle
+);
+
 export default router;
