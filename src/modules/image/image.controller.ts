@@ -7,13 +7,13 @@ const upload = multerUpload({ sendedFileDest: "tmp", storeIn: StoreInEnum.disk }
 const router = Router();
 const imageServices = new ImageServices();
 
-router.get("/backgrounds/:imageId", auth, imageServices.listBackgroundsForImage);
 // Hamza
 router.post("/gen-img-with-selected-background",auth,multerUpload({}).single("backgroundImage"),imageServices.genImgWithSelectedBackground,);
 router.post("/gen-img-with-new-background", auth, imageServices.genImgWithNewBackground);
 router.post("/gen-resize-img", auth, multerUpload({}).single("image"), imageServices.genResizeImg);
 router.post("/blur-image-region",auth,multerUpload({}).single("image"),imageServices.blurImageRegion,);
 router.get("/get-image", auth, imageServices.getImage);
+router.get("/get-last-background-versions/:imageId", auth, imageServices.listBackgroundsForImage);
 // Abdulrahim
 router.post("/gen-img-with-new-dimension",auth,multerUpload({}).single("image"),imageServices.genImgWithNewDimension,);
 router.post("/gen-inhanced-quality-img",auth,multerUpload({}).single("image"),imageServices.genInhancedQualityImg,);
