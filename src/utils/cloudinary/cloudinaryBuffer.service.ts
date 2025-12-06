@@ -15,14 +15,19 @@ const initCloudinary = () => {
   isCloudinaryInitialized = true;
 };
 
+interface UploadBufferOptions {
+  fileBuffer: Buffer;
+  storagePathOnCloudinary?: string; // optional, default provided
+  filename?: string; // optional
+  mimeType?: string; // optional
+}
 
 export const uploadBufferFile = async ({
   fileBuffer,
   storagePathOnCloudinary = "ImaginoApp",
-}: {
-  fileBuffer: Buffer;
-  storagePathOnCloudinary: string;
-}): Promise<{ public_id: string; secure_url: string }> => {
+  filename,
+  mimeType,
+}: UploadBufferOptions): Promise<{ public_id: string; secure_url: string }> => {
   initCloudinary();
 
   const folder = `${process.env.APP_NAME}/${storagePathOnCloudinary}`;
@@ -36,10 +41,12 @@ export const uploadBufferFile = async ({
       },
       (error, result) => {
         if (error) reject(error);
-        else resolve({
-          public_id: result!.public_id,
-          secure_url: result!.secure_url,
-        });
+        else if (result)
+          resolve({
+            public_id: result.public_id,
+            secure_url: result.secure_url,
+          });
+        else reject(new Error("Cloudinary upload failed"));
       }
     );
 

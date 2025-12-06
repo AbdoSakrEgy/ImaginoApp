@@ -31,6 +31,7 @@ import {
 } from "./background.helpers";
 import { generateProductPromptFromImage } from "../../utils/ai/productPromptGenerator";
 import { uploadBufferFile } from "../../utils/cloudinary/cloudinaryBuffer.service";
+import { convertWithFalAI } from "../../utils/ai/convertWithFalAi";
 
 type NegativePromptSource = "user" | "vision" | "auto";
 
@@ -65,7 +66,7 @@ interface PreparedBackgroundContext {
 export class ImageServices implements IImageServices {
   private imageModel = ImageModel;
 
-  constructor() {}
+  constructor() { }
 
   // ============================ Utility functions for the service ============================
   private parseBooleanFlag(value: unknown, defaultValue: boolean): boolean {
@@ -1328,14 +1329,14 @@ export class ImageServices implements IImageServices {
     const overlayOptions: sharp.OverlayOptions =
       productPlacement.mode === "custom"
         ? {
-            input: resizedProductBuffer,
-            left: productPlacement.left,
-            top: productPlacement.top,
-          }
+          input: resizedProductBuffer,
+          left: productPlacement.left,
+          top: productPlacement.top,
+        }
         : {
-            input: resizedProductBuffer,
-            gravity: "center",
-          };
+          input: resizedProductBuffer,
+          gravity: "center",
+        };
 
     const compositedBuffer = await sharp(backgroundBuffer)
       .resize({ width: stabilityWidth, height: stabilityHeight, fit: "cover" })
@@ -1659,9 +1660,8 @@ export class ImageServices implements IImageServices {
 
     const tmpDir = this.ensureTmpDirectory("resized");
     const parsedName = path.parse(sourceFilename || sourceOriginalFilename || "image");
-    const resizedFilename = `${parsedName.name || "image"}-${targetWidth || "auto"}x${
-      targetHeight || "auto"
-    }-${Date.now()}.${formatDetails?.extension || "png"}`;
+    const resizedFilename = `${parsedName.name || "image"}-${targetWidth || "auto"}x${targetHeight || "auto"
+      }-${Date.now()}.${formatDetails?.extension || "png"}`;
     const tempResizedPath = path.join(tmpDir, resizedFilename);
     fs.writeFileSync(tempResizedPath, resizedBuffer);
 
@@ -2358,7 +2358,7 @@ export class ImageServices implements IImageServices {
 
     const { public_id, secure_url } = await uploadBufferFile({
       fileBuffer: bufferToUpload,
-      storagePathOnCloudinary: `${projectFolder}/${userId}/no-bg`,
+      storagePathOnCloudinary: `${projectFolder}/${userId}/no-bg`
     });
 
     const newImage = await ImageModel.create({
@@ -2387,6 +2387,70 @@ export class ImageServices implements IImageServices {
     return successHandler({
       res,
       message: "Image uploaded and background removed successfully",
+      result: {
+        _id: newImage._id,
+        url: newImage.url,
+        storageKey: newImage.storageKey,
+        aiEdits: newImage.aiEdits,
+      },
+    });
+  }
+
+  convertYourImageToStyle = async (
+    req: Request,
+    res: Response,
+    next: NextFunction
+  ): Promise<Response> => {
+    const userId = res.locals.user?._id?.toString();
+    if (!userId) throw new ApplicationException("User not authenticated", 401);
+    if (!req.file) throw new ApplicationException("No image uploaded", 400);
+
+    const SUPPORTED_STYLES = ["cartoon", "pixar", "watercolor", "pencil"];
+    let style: string = (req.body.style || req.query.style || "cartoon").toString();
+    if (!SUPPORTED_STYLES.includes(style)) style = "cartoon";
+
+    const fileBuffer = fs.readFileSync(req.file.path);
+    const base64Image = fileBuffer.toString("base64");
+
+    const outputBase64 = await convertWithFalAI(base64Image);
+    const bufferToUpload = Buffer.from(outputBase64, "base64");
+
+    const projectFolder = process.env.PROJECT_FOLDER || "DefaultProjectFolder";
+
+    // رفع الصورة على Cloudinary/S3
+    const { public_id, secure_url } = await uploadBufferFile({
+      fileBuffer: bufferToUpload,
+      storagePathOnCloudinary: `${projectFolder}/${userId}/${style}`,
+    });
+
+    // إنشاء الصورة في DB
+    const newImage = await ImageModel.create({
+      user: new mongoose.Types.ObjectId(userId),
+      url: secure_url,
+      storageKey: public_id,
+      filename: req.file.originalname,
+      mimeType: req.file.mimetype,
+      size: req.file.size,
+      dimensions: { width: 0, height: 0 },
+      status: "completed",
+      isPublic: false,
+      aiEdits: [
+        {
+          operation: "custom",
+          provider: "custom" as const,
+          timestamp: new Date(),
+          processingTime: 0,
+          cost: 0,
+          parameters: { style },
+        },
+      ],
+    });
+
+    fs.unlinkSync(req.file.path);
+
+    return successHandler({
+      res,
+      message: `Image uploaded and converted to ${style} successfully`,
       result: {
         _id: newImage._id,
         url: newImage.url,
