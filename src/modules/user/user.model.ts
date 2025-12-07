@@ -30,10 +30,6 @@ const userSchema = new Schema<IUser>(
     phone: {
       type: String,
       trim: true,
-      validate: {
-        validator: (v) => /^\+?[1-9]\d{7,14}$/.test(v.replace(/[\s-]/g, "")),
-        message: (props) => `${props.value} is not a valid phone number!`,
-      },
       set: (value: string) => (value ? encrypt(value) : undefined),
       get: (value: string) => (value ? decrypt(value) : undefined),
     },

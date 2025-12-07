@@ -91,7 +91,6 @@ export class UserServices implements IUserServices {
   updateBasicInfo = async (req: Request, res: Response, next: NextFunction): Promise<Response> => {
     const user = res.locals.user;
     const { firstName, lastName, age, gender, phone } = req.body;
-
     const updatedUser = await this.userModel.findOneAndUpdate(
       { _id: user._id },
       {
