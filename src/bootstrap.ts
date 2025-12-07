@@ -5,6 +5,7 @@ import router from "./routes";
 import { ApplicationException, IError } from "./utils/Errors";
 import cors from "cors";
 import { connectDB } from "./DB/db.connection";
+import mongoose from "mongoose";
 
 dotenv.config({
   path: path.resolve("./src/.env"),
@@ -41,7 +42,18 @@ app.use((err: IError, req: Request, res: Response, next: NextFunction) => {
 // Wrap server start in an async function
 const startServer = async () => {
   try {
-    await connectDB();
+    // await connectDB();
+    if (!process.env.MONGODB_ATLAS_URL) {
+        throw new Error("MONGODB_ATLAS_URL is missing!");
+      }
+      await mongoose
+        .connect(process.env.MONGODB_ATLAS_URL as string)
+        .then(() => {
+          console.log("DB connected successfully");
+        })
+        .catch((err) => {
+          console.log(err);
+        });
     app.listen(3000, () => {
       console.log("Server running on port 3000");
       console.log("============================");
