@@ -13,7 +13,7 @@ import { PricingPlanEnum } from "../../types/user.module.types";
 const router = Router();
 const userServices = new UserServices();
 
-router.get("/user-profile", auth, authPlans([PricingPlanEnum.PRO]), userServices.userProfile);
+router.get("/user-profile", auth, authPlans([PricingPlanEnum.FREE]), userServices.userProfile);
 router.get("/user-profile/:userId", auth, userServices.userProfile);
 router.patch("/upload-profile-image",auth,multerUpload({ storeIn: StoreInEnum.disk, sendedFileDest: "profile" }).single("profileImage"),validation(uploadProfileImageSchema),userServices.uploadProfileImage,);
 router.delete("/delete-profile-image", auth, userServices.deleteProfileImage);
