@@ -12,10 +12,7 @@ interface MulterFile {
   size: number;
 }
 
-export async function genImgWithNewDimensionFn(
-  file: MulterFile,
-  angle: string | number,
-): Promise<Buffer | null> {
+export async function genRemoveBackground(file: MulterFile): Promise<Buffer | null> {
   const openai = new OpenAI({
     apiKey: process.env.PAID_OpenAI_KEY,
   });
@@ -30,26 +27,22 @@ export async function genImgWithNewDimensionFn(
 
     const fileBuffer = fs.readFileSync(file.path);
     const promptText = `
-You are an expert 3D rendering and product photography specialist.
-
-Generate a **photorealistic image** of the same product shown in the input image from the specified angle: **${angle}**.
+Remove the background from this image completely.
 
 Requirements:
-- Preserve the original product shape, materials, colors, and proportions exactly.
-- Maintain realistic lighting, shadows, and reflections.
-- Render from the exact requested angle (top, bottom, left, right, top-left, top-right, bottom-left, bottom-right, or any custom angle).
-- Keep the background clean and professional (studio-style, plain background).
-- Ensure e-commerce quality: high-resolution, sharp, well-lit, realistic.
-- Do NOT alter, add, or remove any part of the product.
-- Output a photorealistic image that shows the product clearly from the requested perspective.
+- Keep the main subject (person, object, or product) intact and perfectly preserved.
+- Make the background fully transparent (alpha channel).
+- Maintain crisp, clean edges around the subject with no artifacts or halos.
+- Preserve all details, colors, textures, and shadows of the subject.
+- Do NOT alter, distort, or modify the subject in any way.
+- Output a high-quality PNG image with a transparent background.
 `;
 
-    console.log("Generating image from angle:", angle);
+    console.log("Removing background from image...");
     console.log("Using GPT-Image-1 model...");
 
     const response = await openai.images.edit({
       model: "gpt-image-1",
-      // Pass the buffer directly with explicit MIME type
       image: new File([fileBuffer], file.originalname, { type: file.mimetype }),
       prompt: promptText,
       size: "1024x1024",
@@ -64,10 +57,10 @@ Requirements:
     const base64Image = response.data[0].b64_json;
     const buffer = Buffer.from(base64Image, "base64");
 
-    console.log("Image generated successfully from angle:", angle);
+    console.log("Background removed successfully");
     return buffer;
   } catch (error) {
-    console.error("Error generating image with new dimension:", error);
+    console.error("Error removing background:", error);
     throw error;
   }
 }

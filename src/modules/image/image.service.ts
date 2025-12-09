@@ -15,7 +15,6 @@ import { genInhancedQualityImgFn } from "../../utils/GenAI/gen.inhanced.quality.
 import { genMergeLogoToImgFn } from "../../utils/GenAI/gen-merge-logo-to-img";
 import { paginationFunction } from "../../utils/pagination";
 import { destroySingleFile, uploadSingleFile } from "../../utils/cloudinary/cloudinary.service";
-import { removeBackgroundFromImageBase64 } from "../../utils/ai/removeBackground";
 import {
   generateBackgroundWithStability,
   StabilityBackgroundOptions,
@@ -32,6 +31,8 @@ import {
 import { generateProductPromptFromImage } from "../../utils/ai/productPromptGenerator";
 import { uploadBufferFile } from "../../utils/cloudinary/cloudinaryBuffer.service";
 import { convertWithFalAI } from "../../utils/ai/convertWithFalAi";
+import { genRemoveBackground } from "../../utils/GenAI/gen.remove.background";
+import { genChangeImageStyleFn } from "../../utils/GenAI/gen.change.image.style";
 
 type NegativePromptSource = "user" | "vision" | "auto";
 
@@ -66,7 +67,7 @@ interface PreparedBackgroundContext {
 export class ImageServices implements IImageServices {
   private imageModel = ImageModel;
 
-  constructor() { }
+  constructor() {}
 
   // ============================ Utility functions for the service ============================
   private parseBooleanFlag(value: unknown, defaultValue: boolean): boolean {
@@ -1329,14 +1330,14 @@ export class ImageServices implements IImageServices {
     const overlayOptions: sharp.OverlayOptions =
       productPlacement.mode === "custom"
         ? {
-          input: resizedProductBuffer,
-          left: productPlacement.left,
-          top: productPlacement.top,
-        }
+            input: resizedProductBuffer,
+            left: productPlacement.left,
+            top: productPlacement.top,
+          }
         : {
-          input: resizedProductBuffer,
-          gravity: "center",
-        };
+            input: resizedProductBuffer,
+            gravity: "center",
+          };
 
     const compositedBuffer = await sharp(backgroundBuffer)
       .resize({ width: stabilityWidth, height: stabilityHeight, fit: "cover" })
@@ -1660,8 +1661,9 @@ export class ImageServices implements IImageServices {
 
     const tmpDir = this.ensureTmpDirectory("resized");
     const parsedName = path.parse(sourceFilename || sourceOriginalFilename || "image");
-    const resizedFilename = `${parsedName.name || "image"}-${targetWidth || "auto"}x${targetHeight || "auto"
-      }-${Date.now()}.${formatDetails?.extension || "png"}`;
+    const resizedFilename = `${parsedName.name || "image"}-${targetWidth || "auto"}x${
+      targetHeight || "auto"
+    }-${Date.now()}.${formatDetails?.extension || "png"}`;
     const tempResizedPath = path.join(tmpDir, resizedFilename);
     fs.writeFileSync(tempResizedPath, resizedBuffer);
 
@@ -2340,123 +2342,231 @@ export class ImageServices implements IImageServices {
     res: Response,
     next: NextFunction,
   ): Promise<Response> => {
-    const userId = res.locals.user?._id?.toString();
-    if (!userId) throw new ApplicationException("User not authenticated", 401);
+    const user = res.locals.user;
+    const file = req.file;
 
-    if (!req.file) throw new ApplicationException("No image uploaded", 400);
+    // step: check file existence
+    if (!file) {
+      throw new ApplicationException("file is required", 400);
+    }
 
-    const fileBuffer = fs.readFileSync(req.file.path);
-    const base64Image = fileBuffer.toString("base64");
-
-    const resultBase64 = await removeBackgroundFromImageBase64({
-      imageBase64: base64Image,
+    // step: store orignial image in Cloudinary and DB
+    const { public_id, secure_url } = await uploadSingleFile({
+      fileLocation: (file as any).path,
+      storagePathOnCloudinary: `ImaginoApp/genInhancedQuality/${user._id}`,
     });
 
-    const bufferToUpload = Buffer.from(resultBase64, "base64");
-
-    const projectFolder = process.env.PROJECT_FOLDER || "DefaultProjectFolder";
-
-    const { public_id, secure_url } = await uploadBufferFile({
-      fileBuffer: bufferToUpload,
-      storagePathOnCloudinary: `${projectFolder}/${userId}/no-bg`
-    });
-
-    const newImage = await ImageModel.create({
-      user: new mongoose.Types.ObjectId(userId),
+    const originalImage = await this.imageModel.create({
+      user: user._id,
       url: secure_url,
       storageKey: public_id,
-      filename: req.file.originalname,
-      mimeType: req.file.mimetype,
-      size: req.file.size,
-      dimensions: { width: 0, height: 0 },
-      status: "completed",
+      filename: file.filename,
+      originalFilename: file.originalname,
+      mimeType: file.mimetype,
+      size: file.size,
+      children: [],
+      isOriginal: true,
+      version: 1,
+      aiEdits: [],
+      status: "completed" as const,
+      tags: ["original", "remove-background"],
+      title: file.originalname,
+      description: "Original upload for quality enhancement",
+      category: "other" as const,
       isPublic: false,
-      aiEdits: [
-        {
-          operation: "remove-background",
-          provider: "custom",
-          timestamp: new Date(),
-          processingTime: 0,
-          cost: 0,
-        },
-      ],
+      views: 0,
+      downloads: 0,
     });
 
-    fs.unlinkSync(req.file.path);
+    // step: Use AI to remove background
+    // This function returns a Buffer of the processed image
+    const imgWithoutBG = await genRemoveBackground(file);
+
+    // step: Check if background removal was successful
+    if (!imgWithoutBG) {
+      throw new ApplicationException("Failed to remove background from image", 500);
+    }
+
+    // step: Create a temporary path for the enhanced image to upload it
+    const imgWithoutBGName = `removedBG-${Date.now()}-${file.filename}`;
+    const tempImgWithoutBG = `${file.path}-removedBG`;
+
+    fs.writeFileSync(tempImgWithoutBG, imgWithoutBG);
+
+    // step: Store removedBGImage in Cloudinary
+    const { public_id: newPublicId, secure_url: newSecureUrl } = await uploadSingleFile({
+      fileLocation: tempImgWithoutBG,
+      storagePathOnCloudinary: `ImaginoApp/genInhancedQuality/${user._id}/removedBG`,
+    });
+
+    // step: Store removedBGImage in DB (as child of original)
+    const removedBGImage = await this.imageModel.create({
+      user: user._id,
+      url: newSecureUrl,
+      storageKey: newPublicId,
+      filename: imgWithoutBGName,
+      originalFilename: `removedBG-${file.originalname}`,
+      mimeType: file.mimetype,
+      size: imgWithoutBG.length,
+      parentId: originalImage._id,
+      children: [],
+      isOriginal: false,
+      version: 1, // Will auto-increment due to pre-save hook logic if configured
+      aiEdits: [
+        {
+          operation: "enhance" as const, // Ensure this enum exists in your schema
+          provider: "custom" as const, // or "google"
+          prompt: "Enhance image quality and resolution",
+          parameters: {
+            model: "gemini-flash",
+            improvement: "quality-upscale",
+          },
+          timestamp: new Date(),
+          processingTime: 0,
+        },
+      ],
+      status: "completed" as const,
+      tags: ["enhanced", "genAI", "high-quality"],
+      title: `Enhanced - ${file.originalname}`,
+      description: "AI Enhanced version of the original image",
+      category: "other" as const,
+      isPublic: false,
+      views: 0,
+      downloads: 0,
+    });
+
+    // step: Update parent image with child reference
+    await this.imageModel.findByIdAndUpdate(originalImage._id, {
+      $addToSet: { children: removedBGImage._id },
+    });
+
+    // step: Cleanup file system (Temp files)
+    // Delete the original multer upload
+    if (fs.existsSync(file.path)) fs.unlinkSync(file.path);
+    // step: Delete the generated temp file
+    if (fs.existsSync(tempImgWithoutBG)) fs.unlinkSync(tempImgWithoutBG);
 
     return successHandler({
       res,
-      message: "Image uploaded and background removed successfully",
       result: {
-        _id: newImage._id,
-        url: newImage.url,
-        storageKey: newImage.storageKey,
-        aiEdits: newImage.aiEdits,
+        original: originalImage,
+        enhanced: removedBGImage,
       },
     });
-  }
-  
-  // ============================ convertYourImageToStyle ============================
-  convertYourImageToStyle = async (
-    req: Request,
-    res: Response,
-    next: NextFunction
-  ): Promise<Response> => {
-    const userId = res.locals.user?._id?.toString();
-    if (!userId) throw new ApplicationException("User not authenticated", 401);
-    if (!req.file) throw new ApplicationException("No image uploaded", 400);
+  };
 
-    const SUPPORTED_STYLES = ["cartoon", "pixar", "watercolor", "pencil"];
-    let style: string = (req.body.style || req.query.style || "cartoon").toString();
-    if (!SUPPORTED_STYLES.includes(style)) style = "cartoon";
+  // ============================ genChangeImageStyle ============================
+  genChangeImageStyle = async (req: Request, res: Response, next: NextFunction): Promise<Response> => {
+    const user = res.locals.user;
+    const file = req.file;
+    const { style } = req.body;
 
-    const fileBuffer = fs.readFileSync(req.file.path);
-    const base64Image = fileBuffer.toString("base64");
+    // step: check file existence
+    if (!file) {
+      throw new ApplicationException("file is required", 400);
+    }
 
-    const outputBase64 = await convertWithFalAI(base64Image);
-    const bufferToUpload = Buffer.from(outputBase64, "base64");
-
-    const projectFolder = process.env.PROJECT_FOLDER || "DefaultProjectFolder";
-
-    // رفع الصورة على Cloudinary/S3
-    const { public_id, secure_url } = await uploadBufferFile({
-      fileBuffer: bufferToUpload,
-      storagePathOnCloudinary: `${projectFolder}/${userId}/${style}`,
+    // step: store orignial image in Cloudinary and DB
+    const { public_id, secure_url } = await uploadSingleFile({
+      fileLocation: (file as any).path,
+      storagePathOnCloudinary: `ImaginoApp/genInhancedQuality/${user._id}`,
     });
 
-    // إنشاء الصورة في DB
-    const newImage = await ImageModel.create({
-      user: new mongoose.Types.ObjectId(userId),
+    const originalImage = await this.imageModel.create({
+      user: user._id,
       url: secure_url,
       storageKey: public_id,
-      filename: req.file.originalname,
-      mimeType: req.file.mimetype,
-      size: req.file.size,
-      dimensions: { width: 0, height: 0 },
-      status: "completed",
+      filename: file.filename,
+      originalFilename: file.originalname,
+      mimeType: file.mimetype,
+      size: file.size,
+      children: [],
+      isOriginal: true,
+      version: 1,
+      aiEdits: [],
+      status: "completed" as const,
+      tags: ["original", "convert-to-style"],
+      title: file.originalname,
+      description: "Original upload for quality enhancement",
+      category: "other" as const,
       isPublic: false,
-      aiEdits: [
-        {
-          operation: "custom",
-          provider: "custom" as const,
-          timestamp: new Date(),
-          processingTime: 0,
-          cost: 0,
-          parameters: { style },
-        },
-      ],
+      views: 0,
+      downloads: 0,
     });
 
-    fs.unlinkSync(req.file.path);
+    // step: Use AI to remove background
+    // This function returns a Buffer of the processed image
+    const imgWithStyle = await genChangeImageStyleFn(file, style);
+
+    // step: Check if background removal was successful
+    if (!imgWithStyle) {
+      throw new ApplicationException("Failed to remove background from image", 500);
+    }
+
+    // step: Create a temporary path for the enhanced image to upload it
+    const imgWithStyleName = `removedBG-${Date.now()}-${file.filename}`;
+    const tempImgWithStyle = `${file.path}-removedBG`;
+
+    fs.writeFileSync(tempImgWithStyle, imgWithStyle);
+
+    // step: Store removedBGImage in Cloudinary
+    const { public_id: newPublicId, secure_url: newSecureUrl } = await uploadSingleFile({
+      fileLocation: tempImgWithStyle,
+      storagePathOnCloudinary: `ImaginoApp/genInhancedQuality/${user._id}/removedBG`,
+    });
+
+    // step: Store removedBGImage in DB (as child of original)
+    const removedBGImage = await this.imageModel.create({
+      user: user._id,
+      url: newSecureUrl,
+      storageKey: newPublicId,
+      filename: imgWithStyleName,
+      originalFilename: `removedBG-${file.originalname}`,
+      mimeType: file.mimetype,
+      size: imgWithStyle.length,
+      parentId: originalImage._id,
+      children: [],
+      isOriginal: false,
+      version: 1, // Will auto-increment due to pre-save hook logic if configured
+      aiEdits: [
+        {
+          operation: "enhance" as const, // Ensure this enum exists in your schema
+          provider: "custom" as const, // or "google"
+          prompt: "Enhance image quality and resolution",
+          parameters: {
+            model: "gemini-flash",
+            improvement: "quality-upscale",
+          },
+          timestamp: new Date(),
+          processingTime: 0,
+        },
+      ],
+      status: "completed" as const,
+      tags: ["enhanced", "genAI", "high-quality"],
+      title: `Enhanced - ${file.originalname}`,
+      description: "AI Enhanced version of the original image",
+      category: "other" as const,
+      isPublic: false,
+      views: 0,
+      downloads: 0,
+    });
+
+    // step: Update parent image with child reference
+    await this.imageModel.findByIdAndUpdate(originalImage._id, {
+      $addToSet: { children: removedBGImage._id },
+    });
+
+    // step: Cleanup file system (Temp files)
+    // Delete the original multer upload
+    if (fs.existsSync(file.path)) fs.unlinkSync(file.path);
+    // step: Delete the generated temp file
+    if (fs.existsSync(tempImgWithStyle)) fs.unlinkSync(tempImgWithStyle);
 
     return successHandler({
       res,
-      message: `Image uploaded and converted to ${style} successfully`,
       result: {
-        _id: newImage._id,
-        url: newImage.url,
-        storageKey: newImage.storageKey,
-        aiEdits: newImage.aiEdits,
+        original: originalImage,
+        enhanced: removedBGImage,
       },
     });
   };
