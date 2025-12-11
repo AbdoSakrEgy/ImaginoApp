@@ -34,6 +34,8 @@ import { convertWithFalAI } from "../../utils/ai/convertWithFalAi";
 import { genRemoveBackground } from "../../utils/GenAI/gen.remove.background";
 import { genChangeImageStyleFn } from "../../utils/GenAI/gen.change.image.style";
 import { removeBackgroundFromImageBase64 } from "../../utils/ai/removeBackground";
+import { extractTextFromImgFnV2 } from "../../utils/GenAI/extract.text.from.img.v2";
+import { recognizeItemsInImgFnV2 } from "../../utils/GenAI/recognize.items.in.image.ts.v2";
 
 
 type NegativePromptSource = "user" | "vision" | "auto";
@@ -2166,7 +2168,7 @@ export class ImageServices implements IImageServices {
       downloads: 0,
     });
     // step: extract text
-    const text = await extractTextFromImgFn(file);
+    const text = await extractTextFromImgFnV2(file);
     return successHandler({ res, result: { text } });
   };
   // ============================ recognizeItemsInImage ============================
@@ -2207,8 +2209,8 @@ export class ImageServices implements IImageServices {
       views: 0,
       downloads: 0,
     });
-    // step: extract text
-    const text = await recognizeItemsInImgFn(file);
+    // step: recognize items in image
+    const text = await recognizeItemsInImgFnV2(file);
     return successHandler({ res, result: { text } });
   };
   // ============================ getAllImages ============================

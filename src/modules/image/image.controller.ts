@@ -23,7 +23,7 @@ router.post("/recognize-items-in-img", auth, multerUpload({}).single("image"), i
 // Group 3
 router.get("/getall", auth, imageServices.getAllImages);
 router.delete("/delete/:imageId", auth, imageServices.deleteImage);
-router.post("/gen-img-without-background", auth, upload.single("imageFile"), imageServices.uploadImageWithoutBackground,); 
+router.post("/gen-img-without-background", auth, upload.single("imageFile"), imageServices.uploadImageWithoutBackground);
 router.post("/gen-suitable-background", auth, imageServices.generateSuitableBackground);
 router.post("/gen-change-image-style", auth, multerUpload({ sendedFileDest: "ai-style", sendedFileType: ["image/jpeg", "image/png", "image/webp"], }).single("image"), imageServices.genChangeImageStyle);
 
