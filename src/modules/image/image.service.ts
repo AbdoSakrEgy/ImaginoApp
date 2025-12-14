@@ -2159,7 +2159,7 @@ export class ImageServices implements IImageServices {
       downloads: 0,
     });
     // step: extract text
-    const text = await extractTextFromImgFnV2(file);
+    const text = await extractTextFromImgFn(file);
     return successHandler({ res, result: { text } });
   };
   // ============================ recognizeItemsInImage ============================
@@ -2201,7 +2201,7 @@ export class ImageServices implements IImageServices {
       downloads: 0,
     });
     // step: recognize items in image
-    const text = await recognizeItemsInImgFnV2(file);
+    const text = await recognizeItemsInImgFn(file);
     return successHandler({ res, result: { text } });
   };
   // ============================ getAllImages ============================
