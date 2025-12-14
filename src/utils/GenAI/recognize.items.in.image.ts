@@ -54,7 +54,7 @@ export async function recognizeItemsInImgFn(file: MulterFile): Promise<ImageReco
 
     // 3. Configure Model with Item Recognition Schema
     const model = genAI.getGenerativeModel({
-      model: "gemini-2.0-flash",
+      model: "gemini-2.5-flash",
       generationConfig: {
         responseMimeType: "application/json",
         responseSchema: {
