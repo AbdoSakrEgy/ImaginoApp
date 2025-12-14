@@ -37,7 +37,6 @@ import { removeBackgroundFromImageBase64 } from "../../utils/ai/removeBackground
 import { extractTextFromImgFnV2 } from "../../utils/GenAI/extract.text.from.img.v2";
 import { recognizeItemsInImgFnV2 } from "../../utils/GenAI/recognize.items.in.image.ts.v2";
 
-
 type NegativePromptSource = "user" | "vision" | "auto";
 
 interface PrepareBackgroundContextOptions {
@@ -2136,41 +2135,86 @@ export class ImageServices implements IImageServices {
     next: NextFunction,
   ): Promise<Response> => {
     const user = res.locals.user;
-    const file = req.file;
-    // step: check file existence
-    if (!file) {
-      throw new ApplicationException("file is required", 400);
+    const file = req.file as Express.Multer.File | undefined;
+    const { imageId } = req.body || {};
+
+    if (!file && (!imageId || !mongoose.Types.ObjectId.isValid(imageId))) {
+      throw new ApplicationException("Provide an image file or a valid imageId", 400);
     }
-    // step: Store ORIGINAL image in Cloudinary and DB
-    const { public_id, secure_url } = await uploadSingleFile({
-      fileLocation: (file as any).path,
-      storagePathOnCloudinary: `ImaginoApp/genInhancedQuality/${user._id}`,
-    });
-    const originalImage = await this.imageModel.create({
-      user: user._id,
-      url: secure_url,
-      storageKey: public_id,
-      filename: file.filename,
-      originalFilename: file.originalname,
-      mimeType: file.mimetype,
-      size: file.size,
-      children: [],
-      isOriginal: true,
-      version: 1,
-      aiEdits: [],
-      status: "completed" as const,
-      tags: ["extractTextFromImg"],
-      title: file.originalname,
-      description: "Original upload for quality enhancement",
-      category: "other" as const,
-      isPublic: false,
-      views: 0,
-      downloads: 0,
-    });
-    // step: extract text
-    const text = await extractTextFromImgFnV2(file);
+
+    let fileForOcr: Express.Multer.File | undefined = file;
+
+    // If no upload, pull existing image and materialize it as a temp multer-like file
+    if (!fileForOcr && imageId) {
+      const existingImage = await this.imageModel.findOne({
+        _id: new mongoose.Types.ObjectId(imageId),
+        user: user._id,
+        deletedAt: null,
+      });
+
+      if (!existingImage) {
+        throw new ApplicationException("Image not found", 404);
+      }
+
+      const buffer = await this.downloadImageAsBuffer(existingImage.url);
+      const tmpDir = this.ensureTmpDirectory("extract-text");
+      const extension = existingImage.mimeType?.split("/")[1] || "png";
+      const filename = `${existingImage._id}-${Date.now()}.${extension}`;
+      const tempPath = path.join(tmpDir, filename);
+      fs.writeFileSync(tempPath, buffer);
+
+      fileForOcr = {
+        fieldname: "image",
+        originalname: existingImage.originalFilename || existingImage.filename || filename,
+        encoding: "7bit",
+        mimetype: existingImage.mimeType || "image/png",
+        destination: tmpDir,
+        filename,
+        path: tempPath,
+        size: buffer.length,
+        stream: fs.createReadStream(tempPath),
+        buffer,
+      } as Express.Multer.File;
+    }
+
+    if (!fileForOcr) {
+      throw new ApplicationException("Unable to process image", 400);
+    }
+
+    // If the request uploaded a new file, persist it like before
+    if (file) {
+      const { public_id, secure_url } = await uploadSingleFile({
+        fileLocation: file.path,
+        storagePathOnCloudinary: `ImaginoApp/genInhancedQuality/${user._id}`,
+      });
+
+      await this.imageModel.create({
+        user: user._id,
+        url: secure_url,
+        storageKey: public_id,
+        filename: file.filename,
+        originalFilename: file.originalname,
+        mimeType: file.mimetype,
+        size: file.size,
+        children: [],
+        isOriginal: true,
+        version: 1,
+        aiEdits: [],
+        status: "completed" as const,
+        tags: ["extractTextFromImg"],
+        title: file.originalname,
+        description: "Original upload for quality enhancement",
+        category: "other" as const,
+        isPublic: false,
+        views: 0,
+        downloads: 0,
+      });
+    }
+
+    const text = await extractTextFromImgFnV2(fileForOcr as any);
     return successHandler({ res, result: { text } });
   };
+
   // ============================ recognizeItemsInImage ============================
   recognizeItemsInImage = async (
     req: Request,
@@ -2178,39 +2222,82 @@ export class ImageServices implements IImageServices {
     next: NextFunction,
   ): Promise<Response> => {
     const user = res.locals.user;
-    const file = req.file;
-    // step: check file existence
-    if (!file) {
-      throw new ApplicationException("file is required", 400);
+    const file = req.file as Express.Multer.File | undefined;
+    const { imageId } = req.body || {};
+
+    if (!file && (!imageId || !mongoose.Types.ObjectId.isValid(imageId))) {
+      throw new ApplicationException("Provide an image file or a valid imageId", 400);
     }
-    // step: Store ORIGINAL image in Cloudinary and DB
-    const { public_id, secure_url } = await uploadSingleFile({
-      fileLocation: (file as any).path,
-      storagePathOnCloudinary: `ImaginoApp/genInhancedQuality/${user._id}`,
-    });
-    const originalImage = await this.imageModel.create({
-      user: user._id,
-      url: secure_url,
-      storageKey: public_id,
-      filename: file.filename,
-      originalFilename: file.originalname,
-      mimeType: file.mimetype,
-      size: file.size,
-      children: [],
-      isOriginal: true,
-      version: 1,
-      aiEdits: [],
-      status: "completed" as const,
-      tags: ["recognizeItemsInImage"],
-      title: file.originalname,
-      description: "Original upload for quality enhancement",
-      category: "other" as const,
-      isPublic: false,
-      views: 0,
-      downloads: 0,
-    });
-    // step: recognize items in image
-    const text = await recognizeItemsInImgFnV2(file);
+
+    let fileForRecognition: Express.Multer.File | undefined = file;
+
+    if (!fileForRecognition && imageId) {
+      const existingImage = await this.imageModel.findOne({
+        _id: new mongoose.Types.ObjectId(imageId),
+        user: user._id,
+        deletedAt: null,
+      });
+
+      if (!existingImage) {
+        throw new ApplicationException("Image not found", 404);
+      }
+
+      const buffer = await this.downloadImageAsBuffer(existingImage.url);
+      const tmpDir = this.ensureTmpDirectory("recognize-items");
+      const extension = existingImage.mimeType?.split("/")[1] || "png";
+      const filename = `${existingImage._id}-${Date.now()}.${extension}`;
+      const tempPath = path.join(tmpDir, filename);
+      fs.writeFileSync(tempPath, buffer);
+
+      fileForRecognition = {
+        fieldname: "image",
+        originalname: existingImage.originalFilename || existingImage.filename || filename,
+        encoding: "7bit",
+        mimetype: existingImage.mimeType || "image/png",
+        destination: tmpDir,
+        filename,
+        path: tempPath,
+        size: buffer.length,
+        stream: fs.createReadStream(tempPath),
+        buffer,
+      } as Express.Multer.File;
+    }
+
+    if (!fileForRecognition) {
+      throw new ApplicationException("Unable to process image", 400);
+    }
+
+    // Persist uploaded files as before
+    if (file) {
+      const { public_id, secure_url } = await uploadSingleFile({
+        fileLocation: file.path,
+        storagePathOnCloudinary: `ImaginoApp/genInhancedQuality/${user._id}`,
+      });
+
+      await this.imageModel.create({
+        user: user._id,
+        url: secure_url,
+        storageKey: public_id,
+        filename: file.filename,
+        originalFilename: file.originalname,
+        mimeType: file.mimetype,
+        size: file.size,
+        children: [],
+        isOriginal: true,
+        version: 1,
+        aiEdits: [],
+        status: "completed" as const,
+        tags: ["recognizeItemsInImage"],
+        title: file.originalname,
+        description: "Original upload for quality enhancement",
+        category: "other" as const,
+        isPublic: false,
+        views: 0,
+        downloads: 0,
+      });
+    }
+
+    const text = await recognizeItemsInImgFnV2(fileForRecognition as any);
     return successHandler({ res, result: { text } });
   };
   // ============================ getAllImages ============================
@@ -2364,7 +2451,7 @@ export class ImageServices implements IImageServices {
 
     const { public_id, secure_url } = await uploadBufferFile({
       fileBuffer: bufferToUpload,
-      storagePathOnCloudinary: `${projectFolder}/${userId}/no-bg`
+      storagePathOnCloudinary: `${projectFolder}/${userId}/no-bg`,
     });
 
     const newImage = await ImageModel.create({
@@ -2401,10 +2488,13 @@ export class ImageServices implements IImageServices {
       },
     });
   };
-  
 
   // ============================ genChangeImageStyle ============================
-  genChangeImageStyle = async (req: Request, res: Response, next: NextFunction): Promise<Response> => {
+  genChangeImageStyle = async (
+    req: Request,
+    res: Response,
+    next: NextFunction,
+  ): Promise<Response> => {
     const user = res.locals.user;
     const file = req.file;
     const { style } = req.body;
