@@ -2203,7 +2203,7 @@ export class ImageServices implements IImageServices {
       });
     }
 
-    const text = await extractTextFromImgFnV2(fileForOcr as any);
+    const text = await extractTextFromImgFn(fileForOcr as any);
     return successHandler({ res, result: { text } });
   };
 
@@ -2289,7 +2289,7 @@ export class ImageServices implements IImageServices {
       });
     }
 
-    const text = await recognizeItemsInImgFnV2(fileForRecognition as any);
+    const text = await recognizeItemsInImgFn(fileForRecognition as any);
     return successHandler({ res, result: { text } });
   };
   // ============================ getAllImages ============================
