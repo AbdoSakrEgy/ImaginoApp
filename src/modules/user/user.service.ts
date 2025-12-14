@@ -205,27 +205,40 @@ export class UserServices implements IUserServices {
     const userId = res.locals.user?._id?.toString();
     if (!userId) throw new ApplicationException("User not authenticated", 401);
 
-    // جلب كل الصور الخاصة بالمستخدم والتي لم يتم حذفها
-    const images = await ImageModel.find({
-      user: new mongoose.Types.ObjectId(userId),
-      deletedAt: null,
-    });
+    const page = Math.max(parseInt((req.query.page as string) || "1", 10), 1);
+    const size = Math.max(Math.min(parseInt((req.query.size as string) || "20", 10), 100), 1);
+
+    const filter = { user: new mongoose.Types.ObjectId(userId), deletedAt: null } as const;
+
+    const [totalCount, images] = await Promise.all([
+      ImageModel.countDocuments(filter),
+      ImageModel.find(filter)
+        .sort({ createdAt: -1 })
+        .skip((page - 1) * size)
+        .limit(size),
+    ]);
 
     return successHandler({
       res,
       message: "User images fetched successfully",
-      result: images.map((image) => ({
-        _id: image._id,
-        url: image.url,
-        storageKey: image.storageKey,
-        filename: image.filename,
-        mimeType: image.mimeType,
-        size: image.size,
-        dimensions: image.dimensions,
-        status: image.status,
-        isPublic: image.isPublic,
-        aiEdits: image.aiEdits,
-      })),
+      result: {
+        items: images.map((image) => ({
+          _id: image._id,
+          url: image.url,
+          storageKey: image.storageKey,
+          filename: image.filename,
+          mimeType: image.mimeType,
+          size: image.size,
+          dimensions: image.dimensions,
+          status: image.status,
+          isPublic: image.isPublic,
+          aiEdits: image.aiEdits,
+        })),
+        page,
+        size,
+        totalCount,
+        totalPages: Math.ceil(totalCount / size),
+      },
     });
   };
 }
