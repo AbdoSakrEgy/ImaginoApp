@@ -37,6 +37,10 @@ import { removeBackgroundFromImageBase64 } from "../../utils/ai/removeBackground
 import { extractTextFromImgFnV2 } from "../../utils/GenAI/extract.text.from.img.v2";
 import { recognizeItemsInImgFnV2 } from "../../utils/GenAI/recognize.items.in.image.ts.v2";
 import { genMergeImagesFn } from "../../utils/GenAI/gen.merge.images";
+import {
+  genSuitableBackgroundAI,
+  extractDominantColors,
+} from "../../utils/GenAI/gen.suitable.background.ai";
 
 type NegativePromptSource = "user" | "vision" | "auto";
 
@@ -617,25 +621,36 @@ export class ImageServices implements IImageServices {
       visionPositionHint,
     } = await this.prepareBackgroundGenerationContext(prepareOptions);
 
-    const stabilityStartTime = Date.now();
-    const stabilityOptions: StabilityBackgroundOptions = {
+    const aiStartTime = Date.now();
+
+    // Extract dominant colors from product for AI color matching
+    const dominantColors = await extractDominantColors(sourceBuffer, 5);
+    console.log("Extracted dominant colors for background generation:", dominantColors);
+
+    // Determine optimal output size for OpenAI (must be 1024x1024, 1536x1024, or 1024x1536)
+    const aiOutputSize: "1024x1024" | "1536x1024" | "1024x1536" = (() => {
+      const aspectRatio = stabilityWidth / stabilityHeight;
+      if (aspectRatio > 1.3) return "1536x1024"; // landscape
+      if (aspectRatio < 0.77) return "1024x1536"; // portrait
+      return "1024x1024"; // square-ish
+    })();
+
+    // Generate AI background with color harmony
+    console.log("Generating AI background with matching colors and cool aesthetic...");
+    const aiResult = await genSuitableBackgroundAI({
       productImageBuffer: sourceBuffer,
-      width: stabilityWidth,
-      height: stabilityHeight,
-      prompt: resolvedPrompt,
-    };
+      productMimeType: existingImage.mimeType || "image/png",
+      productDescription:
+        metadataSummary || existingImage.title || existingImage.description || "product",
+      userPrompt: resolvedPrompt,
+      negativePrompt: resolvedNegativePrompt,
+      stylePreset: stylePreset?.trim() || undefined,
+      size: aiOutputSize,
+      dominantColors,
+      theme: derivedTheme,
+    });
 
-    if (resolvedNegativePrompt) {
-      stabilityOptions.negativePrompt = resolvedNegativePrompt;
-    }
-    if (stylePreset && stylePreset.trim()) {
-      stabilityOptions.stylePreset = stylePreset.trim();
-    }
-    if (typeof parsedSeed !== "undefined") {
-      stabilityOptions.seed = parsedSeed;
-    }
-
-    const backgroundBuffer = await generateBackgroundWithStability(stabilityOptions);
+    const backgroundBuffer = aiResult.buffer;
 
     const projectFolder = process.env.PROJECT_FOLDER || "DefaultProjectFolder";
     const { public_id, secure_url } = await uploadBufferFile({
@@ -645,7 +660,9 @@ export class ImageServices implements IImageServices {
 
     const tagSet = new Set<string>([
       "genSuitableBackground",
-      "stability-bg",
+      "huggingface-bg",
+      "sdxl",
+      "color-harmony",
       "background-only",
       derivedTheme,
     ]);
@@ -708,19 +725,23 @@ export class ImageServices implements IImageServices {
       aiEdits: [
         {
           operation: "text-to-image" as const,
-          provider: "stability-ai" as const,
+          provider: "custom" as const,
           ...(resolvedPrompt ? { prompt: resolvedPrompt } : {}),
           parameters: {
             ...(stylePreset && stylePreset.trim() ? { stylePreset: stylePreset.trim() } : {}),
-            width: stabilityWidth,
-            height: stabilityHeight,
-            ...(typeof parsedSeed !== "undefined" ? { seed: parsedSeed } : {}),
+            width: aiResult.width,
+            height: aiResult.height,
+            outputSize: aiOutputSize,
+            aiModel: "stable-diffusion-xl-base-1.0",
+            aiProvider: "huggingface",
             ...(resolvedNegativePrompt ? { negativePrompt: resolvedNegativePrompt } : {}),
             promptSource: promptSourceType,
             ...(negativePromptSource ? { negativePromptSource } : {}),
             theme: derivedTheme,
             metadataSummary,
             backgroundOnly: true,
+            colorHarmony: true,
+            dominantColorsUsed: dominantColors,
             ...(visionSummary ? { visionSummary } : {}),
             ...(visionAttributes?.length ? { visionAttributes } : {}),
             ...(visionBackgroundIdeas?.length ? { visionBackgroundIdeas } : {}),
@@ -728,7 +749,7 @@ export class ImageServices implements IImageServices {
             ...(visionPositionHint ? { visionPositionHint } : {}),
           },
           timestamp: new Date(),
-          processingTime: Date.now() - stabilityStartTime,
+          processingTime: Date.now() - aiStartTime,
         },
       ],
       status: "completed" as const,
@@ -742,8 +763,8 @@ export class ImageServices implements IImageServices {
       views: 0,
       downloads: 0,
       dimensions: {
-        width: stabilityWidth,
-        height: stabilityHeight,
+        width: aiResult.width,
+        height: aiResult.height,
       },
     });
 
