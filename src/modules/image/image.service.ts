@@ -36,7 +36,7 @@ import { genChangeImageStyleFn } from "../../utils/GenAI/gen.change.image.style"
 import { removeBackgroundFromImageBase64 } from "../../utils/ai/removeBackground";
 import { extractTextFromImgFnV2 } from "../../utils/GenAI/extract.text.from.img.v2";
 import { recognizeItemsInImgFnV2 } from "../../utils/GenAI/recognize.items.in.image.ts.v2";
-
+import { genMergeImagesFn } from "../../utils/GenAI/gen.merge.images";
 
 type NegativePromptSource = "user" | "vision" | "auto";
 
@@ -1043,7 +1043,6 @@ export class ImageServices implements IImageServices {
 
     const transparentImage = await this.imageModel.findOne({
       _id: new mongoose.Types.ObjectId(productImageId),
-      user: userObjectId,
       deletedAt: null,
     });
 
@@ -1061,7 +1060,6 @@ export class ImageServices implements IImageServices {
     if (backgroundImageId) {
       backgroundImageDoc = await this.imageModel.findOne({
         _id: new mongoose.Types.ObjectId(backgroundImageId),
-        user: userObjectId,
         deletedAt: null,
       });
 
@@ -1086,40 +1084,38 @@ export class ImageServices implements IImageServices {
         : (transparentImage as unknown as Partial<IImage>);
     const { theme: derivedTheme } = buildBackgroundPrompt(promptSeed);
 
-    const resizedProductBuffer = await sharp(productBuffer)
-      .resize({
-        width: Math.min(backgroundWidth, productMetadata.width || backgroundWidth),
-        height: Math.min(backgroundHeight, productMetadata.height || backgroundHeight),
-        fit: "inside",
-        withoutEnlargement: true,
-      })
-      .png()
-      .toBuffer();
+    // Determine optimal output size for OpenAI (must be 1024x1024, 1536x1024, or 1024x1536)
+    const aiOutputSize: "1024x1024" | "1536x1024" | "1024x1536" = (() => {
+      const aspectRatio = backgroundWidth / backgroundHeight;
+      if (aspectRatio > 1.3) return "1536x1024"; // landscape
+      if (aspectRatio < 0.77) return "1024x1536"; // portrait
+      return "1024x1024"; // square-ish
+    })();
 
-    const resizedProductMetadata = await sharp(resizedProductBuffer).metadata();
+    // Build descriptions for AI context
+    const productDescription =
+      transparentImage.description || transparentImage.title || "transparent product image";
+    const bgDescription =
+      backgroundImageDoc?.description || backgroundImageDoc?.title || "background scene";
 
-    const placement = calculateProductPlacement({
-      backgroundWidth,
-      backgroundHeight,
-      productWidth:
-        resizedProductMetadata.width ||
-        Math.min(backgroundWidth, productMetadata.width || backgroundWidth),
-      productHeight:
-        resizedProductMetadata.height ||
-        Math.min(backgroundHeight, productMetadata.height || backgroundHeight),
-      theme: derivedTheme,
+    // Use AI to merge images with proper lighting, shadows, and perspective
+    console.log("Merging images with AI for high-quality composite...");
+    const mergeResult = await genMergeImagesFn({
+      productImageBuffer: productBuffer,
+      backgroundImageBuffer: backgroundBuffer,
+      productMimeType: transparentImage.mimeType || "image/png",
+      backgroundMimeType: backgroundImageDoc?.mimeType || "image/png",
+      productDescription,
+      backgroundDescription: bgDescription,
+      placementHint: ["furniture", "fashion", "food", "vehicle"].includes(derivedTheme)
+        ? "bottom"
+        : "natural",
+      size: aiOutputSize,
     });
 
-    const overlayOptions: sharp.OverlayOptions =
-      placement.mode === "custom"
-        ? { input: resizedProductBuffer, left: placement.left, top: placement.top }
-        : { input: resizedProductBuffer, gravity: "center" };
-
-    const compositedBuffer = await sharp(backgroundBuffer)
-      .resize({ width: backgroundWidth, height: backgroundHeight, fit: "cover" })
-      .composite([overlayOptions])
-      .png()
-      .toBuffer();
+    const compositedBuffer = mergeResult.buffer;
+    const outputWidth = mergeResult.width;
+    const outputHeight = mergeResult.height;
 
     if (backgroundFile?.path && fs.existsSync(backgroundFile.path)) {
       fs.unlinkSync(backgroundFile.path);
@@ -1134,18 +1130,12 @@ export class ImageServices implements IImageServices {
     const tagSet = new Set<string>([
       "genImgWithSelectedBackground",
       derivedTheme,
-      "manual-background",
+      "ai-merged",
+      "openai-composite",
     ]);
 
     if (backgroundImageDoc?.tags?.length) {
       backgroundImageDoc.tags.slice(0, 3).forEach((tag) => tagSet.add(tag));
-    }
-
-    const placementNotes: string[] = [];
-    if (placement.mode === "custom") {
-      placementNotes.push(`Position left=${placement.left}, top=${placement.top}`);
-    } else {
-      placementNotes.push("Centered placement");
     }
 
     const generatedImage = await this.imageModel.create({
@@ -1164,17 +1154,18 @@ export class ImageServices implements IImageServices {
       version: (transparentImage.version || 1) + 1,
       aiEdits: [
         {
-          operation: "custom" as const,
-          provider: "custom" as const,
-          prompt: "Composite product onto selected background",
+          operation: "image-to-image" as const,
+          provider: "openai" as const,
+          prompt:
+            "AI-powered composite: seamlessly merge product onto background with proper lighting, shadows, and perspective",
           parameters: {
             backgroundSource: backgroundImageDoc ? "existing-image" : "uploaded-file",
             ...(backgroundImageDoc ? { backgroundImageId: backgroundImageDoc._id } : {}),
-            placementMode: placement.mode,
-            ...(placement.mode === "custom"
-              ? { placementOffsets: { left: placement.left, top: placement.top } }
-              : {}),
+            aiModel: "gpt-image-1",
+            outputSize: aiOutputSize,
             theme: derivedTheme,
+            productDescription,
+            backgroundDescription: bgDescription,
           },
           timestamp: new Date(),
           processingTime: Date.now() - composeStartTime,
@@ -1183,18 +1174,18 @@ export class ImageServices implements IImageServices {
       status: "completed" as const,
       tags: Array.from(tagSet),
       title: transparentImage.title
-        ? `${transparentImage.title} - selected background`
-        : `${transparentImage.filename}-selected-background`,
+        ? `${transparentImage.title} - AI merged background`
+        : `${transparentImage.filename}-ai-merged-background`,
       description: backgroundImageDoc?.description
-        ? `Composite using background: ${backgroundImageDoc.description}`
-        : "Composite created with user-selected background image",
+        ? `AI composite using background: ${backgroundImageDoc.description}`
+        : "AI-powered composite with user-selected background image",
       category: transparentImage.category || "product",
       isPublic: false,
       views: 0,
       downloads: 0,
       dimensions: {
-        width: backgroundWidth,
-        height: backgroundHeight,
+        width: outputWidth,
+        height: outputHeight,
       },
     });
 
@@ -2364,7 +2355,7 @@ export class ImageServices implements IImageServices {
 
     const { public_id, secure_url } = await uploadBufferFile({
       fileBuffer: bufferToUpload,
-      storagePathOnCloudinary: `${projectFolder}/${userId}/no-bg`
+      storagePathOnCloudinary: `${projectFolder}/${userId}/no-bg`,
     });
 
     const newImage = await ImageModel.create({
@@ -2401,10 +2392,13 @@ export class ImageServices implements IImageServices {
       },
     });
   };
-  
 
   // ============================ genChangeImageStyle ============================
-  genChangeImageStyle = async (req: Request, res: Response, next: NextFunction): Promise<Response> => {
+  genChangeImageStyle = async (
+    req: Request,
+    res: Response,
+    next: NextFunction,
+  ): Promise<Response> => {
     const user = res.locals.user;
     const file = req.file;
     const { style } = req.body;
